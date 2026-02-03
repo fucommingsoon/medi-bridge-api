@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     FUN_ASR_SAMPLE_RATE: int = 16000
     FUN_ASR_FORMAT: str = "wav"  # Supported formats: pcm, wav, mp3, opus, speex, aac, amr
 
+    # Bailian Embedding configuration
+    EMBEDDING_MODEL: str = "text-embedding-v4"
+    EMBEDDING_DIMENSION: int = 1024  # text-embedding-v4 output dimension
+
     class Config:
         env_file = ".env"
         case_sensitive = True
