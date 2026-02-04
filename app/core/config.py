@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     QDRANT_API_KEY: str | None = None
 
     # Vector search configuration
-    VECTOR_SIZE: int = 768
+    VECTOR_SIZE: int = 1024  # text-embedding-v4 output dimension
     TOP_K_RESULTS: int = 5
     SIMILARITY_THRESHOLD: float = 0.7
 

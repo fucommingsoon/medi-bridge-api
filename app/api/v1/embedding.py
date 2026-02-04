@@ -1,7 +1,8 @@
 """Embedding API Routes"""
 from fastapi import APIRouter, HTTPException, Query
 
-from app.schemas.embedding import EmbeddingRequest, EmbeddingResponse
+from app.models.vector_db import qdrant_client
+from app.schemas.embedding import EmbeddingRequest, EmbeddingResponse, StoreRequest, StoreResponse
 from app.services.embedding_service import embedding_service
 from app.services.vector_search import vector_search_service
 
@@ -100,3 +101,38 @@ async def health_check():
         return {"status": "healthy", "service": "bailian-embedding"}
     except Exception as e:
         return {"status": "unhealthy", "service": "bailian-embedding", "error": str(e)}
+
+
+@router.post("/store", response_model=StoreResponse)
+async def store_embedding(request: StoreRequest):
+    """
+    Store text embedding in Qdrant vector database
+
+    This endpoint:
+    1. Converts the input text to an embedding vector using Bailian text-embedding-v4
+    2. Stores the vector and original text in Qdrant
+    3. Returns the point ID and embedding info
+
+    - **text**: The text to embed and store
+    - **metadata**: Optional metadata to store with the text
+    """
+    try:
+        # Generate embedding
+        embedding = await embedding_service.embed_text(request.text)
+
+        # Prepare payload with original text and optional metadata
+        payload = {"text": request.text}
+        if request.metadata:
+            payload.update(request.metadata)
+
+        # Store in Qdrant
+        point_id = qdrant_client.upsert_point(vector=embedding, payload=payload)
+
+        return StoreResponse(
+            point_id=point_id,
+            text=request.text,
+            dimension=len(embedding),
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

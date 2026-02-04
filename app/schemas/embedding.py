@@ -21,3 +21,18 @@ class SearchRequest(BaseModel):
 
     query: str = Field(..., description="Query text", min_length=1, max_length=1000)
     top_k: int = Field(default=5, description="Number of results to return", ge=1, le=20)
+
+
+class StoreRequest(BaseModel):
+    """Store embedding request"""
+
+    text: str = Field(..., description="Text to embed and store", min_length=1, max_length=2048)
+    metadata: dict | None = Field(default=None, description="Optional metadata to store with the text")
+
+
+class StoreResponse(BaseModel):
+    """Store embedding response"""
+
+    point_id: str = Field(..., description="ID of the stored point")
+    text: str = Field(..., description="Original text")
+    dimension: int = Field(..., description="Vector dimension")
