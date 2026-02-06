@@ -47,11 +47,16 @@ app.add_middleware(
 @app.get("/", response_model=HealthResponse, tags=["Root"])
 async def root():
     """Root path health check"""
+    from app.models.sqlite_db import SQLiteClientWrapper
+
+    sqlite_connected = await SQLiteClientWrapper.health_check()
+
     return HealthResponse(
         status="ok",
         service=settings.APP_NAME,
         version=settings.APP_VERSION,
         qdrant_connected=True,  # TODO: Actually check connection status
+        sqlite_connected=sqlite_connected,
     )
 
 

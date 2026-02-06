@@ -9,3 +9,4 @@ class HealthResponse(BaseModel):
     service: str
     version: str
     qdrant_connected: bool
+    sqlite_connected: bool = False

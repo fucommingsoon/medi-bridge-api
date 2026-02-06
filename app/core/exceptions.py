@@ -43,3 +43,17 @@ class InvalidAudioFileError(MediBridgeException):
 
     def __init__(self, message: str = "Invalid audio file or unsupported format"):
         super().__init__(message, code=400)
+
+
+class SQLiteServiceError(MediBridgeException):
+    """SQLite service exception"""
+
+    def __init__(self, message: str = "SQLite service operation failed"):
+        super().__init__(message, code=500)
+
+
+class SQLiteConnectionError(MediBridgeException):
+    """SQLite connection exception"""
+
+    def __init__(self, message: str = "Unable to connect to SQLite database"):
+        super().__init__(message, code=503)

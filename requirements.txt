@@ -13,6 +13,10 @@ python-multipart==0.0.20
 # Bailian ASR
 dashscope>=1.23.0
 
+# SQLite Database
+sqlalchemy>=2.0.0
+aiosqlite>=0.19.0
+
 # Development Tools
 pytest==8.3.4
 pytest-asyncio==0.24.0

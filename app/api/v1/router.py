@@ -1,7 +1,7 @@
 """API v1 Router Aggregation"""
 from fastapi import APIRouter
 
-from app.api.v1 import consultation, asr, embedding
+from app.api.v1 import consultation, asr, embedding, sqlite
 
 api_router = APIRouter()
 
@@ -9,3 +9,4 @@ api_router = APIRouter()
 api_router.include_router(consultation.router)
 api_router.include_router(asr.router)
 api_router.include_router(embedding.router)
+api_router.include_router(sqlite.router)

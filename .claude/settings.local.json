@@ -3,7 +3,9 @@
     "allow": [
       "WebSearch",
       "Bash(tree:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(find:*)",
+      "Bash(python:*)"
     ]
   }
 }

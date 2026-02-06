@@ -1,5 +1,12 @@
 """Application Configuration"""
+import os
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
+
+# Ensure data directory exists
+DATA_DIR = Path("./data")
+DATA_DIR.mkdir(exist_ok=True)
 
 
 class Settings(BaseSettings):
@@ -34,6 +41,10 @@ class Settings(BaseSettings):
     # Bailian Embedding configuration
     EMBEDDING_MODEL: str = "text-embedding-v4"
     EMBEDDING_DIMENSION: int = 1024  # text-embedding-v4 output dimension
+
+    # SQLite database configuration
+    SQLITE_DATABASE_PATH: str = "./data/medbridge.db"
+    SQLITE_ECHO: bool = False  # Set to True for SQL query logging
 
     class Config:
         env_file = ".env"
