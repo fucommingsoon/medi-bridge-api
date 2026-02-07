@@ -224,6 +224,72 @@ class ConditionTreatmentPlan(Base):
         )
 
 
+class Conversation(Base):
+    """Conversation model
+
+    Records conversations between doctors and patients.
+    Stores the current progress of vector search results.
+    """
+
+    __tablename__ = "conversations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        nullable=False, default=lambda: datetime.utcnow()
+    )
+    department: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    patient_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    progress: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        nullable=False, default=lambda: datetime.utcnow()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+        default=lambda: datetime.utcnow(),
+        onupdate=lambda: datetime.utcnow(),
+    )
+
+    # Relationships
+    messages: Mapped[list["Message"]] = relationship(
+        "Message", back_populates="conversation", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Conversation(id={self.id}, title='{self.title}', department='{self.department}')>"
+
+
+class Message(Base):
+    """Message model
+
+    Records individual messages within a conversation.
+    """
+
+    __tablename__ = "messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    conversation_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sent_at: Mapped[datetime] = mapped_column(
+        nullable=False, default=lambda: datetime.utcnow()
+    )
+    role: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        nullable=False, default=lambda: datetime.utcnow()
+    )
+
+    # Relationships
+    conversation: Mapped["Conversation"] = relationship("Conversation", back_populates="messages")
+
+    def __repr__(self) -> str:
+        return f"<Message(id={self.id}, conversation_id={self.conversation_id}, role='{self.role}')>"
+
+
 # ============================================================================
 # Client Wrapper
 # ============================================================================

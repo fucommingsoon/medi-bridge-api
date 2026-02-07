@@ -5,7 +5,10 @@
       "Bash(tree:*)",
       "Bash(curl:*)",
       "Bash(find:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(pip show:*)",
+      "Bash(pip install:*)",
+      "Bash(sqlite3:*)"
     ]
   }
 }

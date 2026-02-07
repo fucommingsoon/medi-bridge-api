@@ -14,7 +14,7 @@ This document provides comprehensive information about the SQLite database schem
 
 ## Overview
 
-The Medi-Bridge SQLite database stores medical conditions, exclusion methods for differential diagnosis, treatment plans, and their relationships. The database is designed to support clinical decision-making while maintaining referential integrity.
+The Medi-Bridge SQLite database stores medical conditions, exclusion methods for differential diagnosis, treatment plans, doctor-patient conversations, and their relationships. The database is designed to support clinical decision-making while maintaining referential integrity.
 
 ### Database Location
 
@@ -48,7 +48,6 @@ SQLITE_ECHO: bool = False  # Enable SQL query logging (for debugging)
 +-------------------+
          |
          |
-         |
          v
 +-------------------------------+
 | condition_treatment_plans     |
@@ -77,6 +76,21 @@ SQLITE_ECHO: bool = False  # Enable SQL query logging (for debugging)
                             | created_at        |
                             | updated_at        |
                             +--------------------+
+
+
++-------------------+          +-------------------------------+
+|   conversations   |          |           messages             |
++-------------------+          +-------------------------------+
+| id (PK)          |<--------| conversation_id (FK) CASCADE   |
+| user_id          |          | id (PK)                       |
+| title            |          | sent_at                       |
+| started_at       |          | role                          |
+| department       |          | content                       |
+| patient_id       |          | created_at                    |
+| progress         |          +-------------------------------+
+| created_at       |
+| updated_at       |
++-------------------+
 ```
 
 ## Entity Relationships
@@ -95,6 +109,14 @@ A condition can have multiple associated treatment plans (for different scenario
 - **Purpose**: Associate treatment plans with conditions while maintaining clinical context
 - **Design choice**: Each condition has its own treatment plan entries for clinical precision (data redundancy is acceptable)
 - **Cascade**: Deleting a condition or treatment plan automatically removes associated junction records
+
+### Conversations and Messages (One-to-Many)
+
+A conversation contains multiple messages, representing a doctor-patient consultation session.
+
+- **Purpose**: Track consultation sessions and chat history
+- **Cascade**: Deleting a conversation automatically removes all associated messages
+- **Ordering**: Messages are ordered by `sent_at` timestamp (oldest first for chat history)
 
 ## Table Definitions
 
@@ -199,6 +221,48 @@ Junction table for many-to-one relationship between conditions and treatment pla
 - `priority`: Used for ordering treatment options (higher values appear first)
 - Multiple treatment plans can exist for a single condition based on patient factors
 
+### conversations
+
+Records doctor-patient conversation sessions.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | INTEGER | PRIMARY KEY, AUTOINCREMENT | Unique identifier |
+| user_id | INTEGER | NULLABLE | Current logged-in user ID (reserved for future use) |
+| title | VARCHAR(255) | NOT NULL | Conversation title/subject |
+| started_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Session start time |
+| department | VARCHAR(100) | NULLABLE | Department/Category (e.g., "Emergency", "Internal Medicine") |
+| patient_id | INTEGER | NULLABLE | Patient ID (reserved for future use) |
+| progress | TEXT | NULLABLE | Current progress (JSON array of condition IDs from last vector search) |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Record creation timestamp |
+| updated_at | TIMESTAMP | NOT NULL, DEFAULT utcnow(), ON UPDATE utcnow() | Last update timestamp |
+
+**Indexes**: Primary key on `id`
+
+**Example `progress`**:
+```json
+[1, 5, 12, 23]
+```
+
+### messages
+
+Records individual messages within a conversation.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | INTEGER | PRIMARY KEY, AUTOINCREMENT | Unique identifier |
+| conversation_id | INTEGER | NOT NULL, FOREIGN KEY → conversations.id (CASCADE) | Reference to conversation |
+| sent_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Message send time |
+| role | VARCHAR(50) | NULLABLE | Message role (reserved for speaker identification via voice analysis) |
+| content | TEXT | NOT NULL | Message content (text) |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Record creation timestamp |
+
+**Indexes**: Primary key on `id`, Foreign key with CASCADE delete
+
+**Notes**:
+- `role` field is reserved for future use when speaker identification is implemented
+- Messages are typically ordered by `sent_at` in ascending order for chat history display
+
 ## API Endpoints
 
 All SQLite endpoints are prefixed with `/api/v1/sqlite`
@@ -245,6 +309,26 @@ All SQLite endpoints are prefixed with `/api/v1/sqlite`
 | DELETE | `/condition-treatment-plans/{id}` | Remove condition-treatment plan association |
 | GET | `/conditions/{id}/treatment-plans` | Get all treatment plans for a condition |
 
+### Conversations
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/conversations` | Create a new conversation |
+| GET | `/conversations/{id}` | Get conversation with messages |
+| GET | `/conversations` | List all conversations (paginated, most recent first) |
+| PATCH | `/conversations/{id}` | Update a conversation |
+| DELETE | `/conversations/{id}` | Delete a conversation (and all messages) |
+
+### Messages
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/messages` | Create a new message |
+| GET | `/messages/{id}` | Get a message |
+| GET | `/conversations/{id}/messages` | List all messages in a conversation (paginated, oldest first) |
+| PATCH | `/messages/{id}` | Update a message |
+| DELETE | `/messages/{id}` | Delete a message |
+
 ### Health Check
 
 | Method | Endpoint | Description |
@@ -265,6 +349,56 @@ curl -X POST "http://localhost:8000/api/v1/sqlite/conditions" \
     "full_description": "Acute inflammation of the vermiform appendix...",
     "summary": "Appendix inflammation causing right lower quadrant pain"
   }'
+```
+
+#### Create a Conversation
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/sqlite/conversations" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Patient with abdominal pain",
+    "department": "Emergency"
+  }'
+```
+
+#### Add a Message to Conversation
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/sqlite/messages" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "conversation_id": 1,
+    "content": "Patient presents with severe right lower quadrant pain"
+  }'
+```
+
+#### Get Conversation with Messages
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/sqlite/conversations/1"
+```
+
+#### Update Conversation Progress
+
+```bash
+curl -X PATCH "http://localhost:8000/api/v1/sqlite/conversations/1" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "progress": "[1, 5, 12]"
+  }'
+```
+
+#### List Conversations
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/sqlite/conversations?skip=0&limit=10"
+```
+
+#### Get Conversation Messages
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/sqlite/conversations/1/messages?skip=0&limit=50"
 ```
 
 #### Get a Condition with Relationships
@@ -322,19 +456,13 @@ curl -X POST "http://localhost:8000/api/v1/sqlite/conditions/1/treatment-plans" 
   }'
 ```
 
-#### List Conditions with Pagination
-
-```bash
-curl -X GET "http://localhost:8000/api/v1/sqlite/conditions?skip=0&limit=10"
-```
-
 ### Using Python Code
 
 #### Direct Database Access
 
 ```python
 from app.models.sqlite_db import SQLiteClientWrapper
-from app.services.sqlite_crud import ConditionService
+from app.services.sqlite_crud import ConditionService, ConversationService, MessageService
 
 # Get a database session
 async with await SQLiteClientWrapper.get_session() as session:
@@ -345,6 +473,20 @@ async with await SQLiteClientWrapper.get_session() as session:
         "summary": "T2DM - insulin resistance"
     })
     print(f"Created condition: {condition.id}")
+
+    # Create a conversation
+    conversation = await ConversationService.create(session, {
+        "title": "Diabetes follow-up",
+        "department": "Endocrinology"
+    })
+    print(f"Created conversation: {conversation.id}")
+
+    # Add a message
+    message = await MessageService.create(session, {
+        "conversation_id": conversation.id,
+        "content": "Patient reports blood sugar levels"
+    })
+    print(f"Created message: {message.id}")
 ```
 
 ## Migration Notes
@@ -357,6 +499,11 @@ async with await SQLiteClientWrapper.get_session() as session:
   - Added condition_exclusion_methods junction table
   - Added treatment_plans table
   - Added condition_treatment_plans junction table
+
+- **v1.1.0** - Conversation support
+  - Added conversations table
+  - Added messages table
+  - Added one-to-many relationship between conversations and messages
 
 ### Database Initialization
 

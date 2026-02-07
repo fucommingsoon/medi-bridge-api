@@ -248,3 +248,109 @@ class TreatmentPlanWithConditionsResponse(TreatmentPlanResponse):
     conditions: list[ConditionResponse] = Field(
         default_factory=list, description="Associated conditions"
     )
+
+
+# ============================================================================
+# Conversation Schemas
+# ============================================================================
+
+
+class ConversationBase(BaseModel):
+    """Base conversation schema"""
+
+    title: str = Field(..., min_length=1, max_length=255, description="Conversation title")
+    department: Optional[str] = Field(None, max_length=100, description="Department/Category")
+    progress: Optional[str] = Field(None, description="Current progress (JSON array of condition IDs)")
+
+
+class ConversationCreate(ConversationBase):
+    """Schema for creating a conversation"""
+
+    user_id: Optional[int] = Field(None, description="Current logged-in user ID (reserved)")
+    patient_id: Optional[int] = Field(None, description="Patient ID (reserved)")
+
+
+class ConversationUpdate(BaseModel):
+    """Schema for updating a conversation"""
+
+    title: Optional[str] = Field(None, min_length=1, max_length=255, description="Conversation title")
+    department: Optional[str] = Field(None, max_length=100, description="Department/Category")
+    progress: Optional[str] = Field(None, description="Current progress (JSON array of condition IDs)")
+    user_id: Optional[int] = Field(None, description="Current logged-in user ID (reserved)")
+    patient_id: Optional[int] = Field(None, description="Patient ID (reserved)")
+
+
+class ConversationResponse(ConversationBase, TimestampMixin):
+    """Schema for conversation response"""
+
+    id: int = Field(description="Conversation ID")
+    user_id: Optional[int] = Field(None, description="Current logged-in user ID (reserved)")
+    patient_id: Optional[int] = Field(None, description="Patient ID (reserved)")
+    started_at: datetime = Field(description="Session start time")
+
+    class Config:
+        from_attributes = True
+
+
+class ConversationListResponse(BaseModel):
+    """Schema for conversation list response"""
+
+    total: int = Field(description="Total number of conversations")
+    items: list[ConversationResponse] = Field(description="List of conversations")
+
+
+class ConversationWithMessagesResponse(ConversationResponse):
+    """Schema for conversation response with messages"""
+
+    messages: list["MessageResponse"] = Field(
+        default_factory=list, description="Messages in this conversation"
+    )
+
+
+# ============================================================================
+# Message Schemas
+# ============================================================================
+
+
+class MessageBase(BaseModel):
+    """Base message schema"""
+
+    content: str = Field(..., min_length=1, description="Message content (text)")
+
+
+class MessageCreate(MessageBase):
+    """Schema for creating a message"""
+
+    conversation_id: int = Field(..., description="Conversation ID")
+    role: Optional[str] = Field(None, max_length=50, description="Message role (reserved)")
+
+
+class MessageUpdate(BaseModel):
+    """Schema for updating a message"""
+
+    content: Optional[str] = Field(None, min_length=1, description="Message content (text)")
+    role: Optional[str] = Field(None, max_length=50, description="Message role (reserved)")
+
+
+class MessageResponse(MessageBase):
+    """Schema for message response"""
+
+    id: int = Field(description="Message ID")
+    conversation_id: int = Field(description="Conversation ID")
+    sent_at: datetime = Field(description="Message send time")
+    role: Optional[str] = Field(None, description="Message role (reserved)")
+    created_at: datetime = Field(description="Creation timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+class MessageListResponse(BaseModel):
+    """Schema for message list response"""
+
+    total: int = Field(description="Total number of messages")
+    items: list[MessageResponse] = Field(description="List of messages")
+
+
+# Update forward references
+ConversationWithMessagesResponse.model_rebuild()

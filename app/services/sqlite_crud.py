@@ -13,7 +13,9 @@ from app.models.sqlite_db import (
     Condition,
     ConditionExclusionMethod,
     ConditionTreatmentPlan,
+    Conversation,
     ExclusionMethod,
+    Message,
     TreatmentPlan,
 )
 from app.schemas.sqlite import (
@@ -21,7 +23,9 @@ from app.schemas.sqlite import (
     ConditionTreatmentPlanCreate,
     ConditionTreatmentPlanUpdate,
     ConditionUpdate,
+    ConversationUpdate,
     ExclusionMethodUpdate,
+    MessageUpdate,
     TreatmentPlanUpdate,
 )
 
@@ -738,3 +742,330 @@ class ConditionTreatmentPlanService:
             return list(result.scalars().all())
         except Exception as e:
             raise SQLiteServiceError(f"Failed to get treatment plans: {e}") from e
+
+
+# ============================================================================
+# Conversation Service
+# ============================================================================
+
+
+class ConversationService:
+    """CRUD operations for conversations"""
+
+    @staticmethod
+    async def create(session: AsyncSession, data: dict) -> Conversation:
+        """Create a new conversation
+
+        Args:
+            session: Database session
+            data: Conversation data dictionary
+
+        Returns:
+            Created conversation object
+
+        Raises:
+            SQLiteServiceError: If creation fails
+        """
+        try:
+            conversation = Conversation(**data)
+            session.add(conversation)
+            await session.commit()
+            await session.refresh(conversation)
+            return conversation
+        except Exception as e:
+            await session.rollback()
+            raise SQLiteServiceError(f"Failed to create conversation: {e}") from e
+
+    @staticmethod
+    async def get(session: AsyncSession, conversation_id: int) -> Optional[Conversation]:
+        """Get a conversation by ID
+
+        Args:
+            session: Database session
+            conversation_id: Conversation ID
+
+        Returns:
+            Conversation object or None if not found
+        """
+        try:
+            stmt = select(Conversation).where(Conversation.id == conversation_id)
+            result = await session.execute(stmt)
+            return result.scalars().first()
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to get conversation: {e}") from e
+
+    @staticmethod
+    async def get_with_messages(
+        session: AsyncSession, conversation_id: int
+    ) -> Optional[Conversation]:
+        """Get a conversation by ID with messages loaded
+
+        Args:
+            session: Database session
+            conversation_id: Conversation ID
+
+        Returns:
+            Conversation object with messages or None if not found
+        """
+        try:
+            stmt = (
+                select(Conversation)
+                .where(Conversation.id == conversation_id)
+                .options(selectinload(Conversation.messages))
+            )
+            result = await session.execute(stmt)
+            return result.scalars().first()
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to get conversation with messages: {e}") from e
+
+    @staticmethod
+    async def list(
+        session: AsyncSession, skip: int = 0, limit: int = 100
+    ) -> tuple[int, list[Conversation]]:
+        """List all conversations with pagination
+
+        Args:
+            session: Database session
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+
+        Returns:
+            Tuple of (total count, list of conversations)
+        """
+        try:
+            # Get total count
+            count_stmt = select(func.count()).select_from(Conversation)
+            count_result = await session.execute(count_stmt)
+            total = count_result.scalar()
+
+            # Get paginated results (most recent first)
+            stmt = (
+                select(Conversation)
+                .offset(skip)
+                .limit(limit)
+                .order_by(Conversation.started_at.desc())
+            )
+            result = await session.execute(stmt)
+            conversations = result.scalars().all()
+
+            return total, list(conversations)
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to list conversations: {e}") from e
+
+    @staticmethod
+    async def update(
+        session: AsyncSession, conversation_id: int, data: ConversationUpdate
+    ) -> Optional[Conversation]:
+        """Update a conversation
+
+        Args:
+            session: Database session
+            conversation_id: Conversation ID
+            data: Update data
+
+        Returns:
+            Updated conversation object or None if not found
+
+        Raises:
+            SQLiteServiceError: If update fails
+        """
+        try:
+            conversation = await ConversationService.get(session, conversation_id)
+            if not conversation:
+                return None
+
+            update_data = data.model_dump(exclude_unset=True)
+            for field, value in update_data.items():
+                setattr(conversation, field, value)
+
+            await session.commit()
+            await session.refresh(conversation)
+            return conversation
+        except Exception as e:
+            await session.rollback()
+            raise SQLiteServiceError(f"Failed to update conversation: {e}") from e
+
+    @staticmethod
+    async def delete(session: AsyncSession, conversation_id: int) -> bool:
+        """Delete a conversation (and all associated messages via CASCADE)
+
+        Args:
+            session: Database session
+            conversation_id: Conversation ID
+
+        Returns:
+            True if deleted, False if not found
+
+        Raises:
+            SQLiteServiceError: If deletion fails
+        """
+        try:
+            conversation = await ConversationService.get(session, conversation_id)
+            if not conversation:
+                return False
+
+            await session.delete(conversation)
+            await session.commit()
+            return True
+        except Exception as e:
+            await session.rollback()
+            raise SQLiteServiceError(f"Failed to delete conversation: {e}") from e
+
+
+# ============================================================================
+# Message Service
+# ============================================================================
+
+
+class MessageService:
+    """CRUD operations for messages"""
+
+    @staticmethod
+    async def create(session: AsyncSession, data: dict) -> Message:
+        """Create a new message
+
+        Args:
+            session: Database session
+            data: Message data dictionary
+
+        Returns:
+            Created message object
+
+        Raises:
+            SQLiteServiceError: If creation fails
+        """
+        try:
+            # Verify conversation exists
+            conversation = await ConversationService.get(session, data.get("conversation_id"))
+            if not conversation:
+                raise SQLiteServiceError(
+                    f"Conversation with ID {data.get('conversation_id')} not found"
+                )
+
+            message = Message(**data)
+            session.add(message)
+            await session.commit()
+            await session.refresh(message)
+            return message
+        except SQLiteServiceError:
+            raise
+        except Exception as e:
+            await session.rollback()
+            raise SQLiteServiceError(f"Failed to create message: {e}") from e
+
+    @staticmethod
+    async def get(session: AsyncSession, message_id: int) -> Optional[Message]:
+        """Get a message by ID
+
+        Args:
+            session: Database session
+            message_id: Message ID
+
+        Returns:
+            Message object or None if not found
+        """
+        try:
+            stmt = select(Message).where(Message.id == message_id)
+            result = await session.execute(stmt)
+            return result.scalars().first()
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to get message: {e}") from e
+
+    @staticmethod
+    async def list_by_conversation(
+        session: AsyncSession, conversation_id: int, skip: int = 0, limit: int = 100
+    ) -> tuple[int, list[Message]]:
+        """List all messages in a conversation with pagination
+
+        Args:
+            session: Database session
+            conversation_id: Conversation ID
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+
+        Returns:
+            Tuple of (total count, list of messages)
+        """
+        try:
+            # Get total count for this conversation
+            count_stmt = (
+                select(func.count())
+                .select_from(Message)
+                .where(Message.conversation_id == conversation_id)
+            )
+            count_result = await session.execute(count_stmt)
+            total = count_result.scalar()
+
+            # Get paginated results (oldest first for chat history)
+            stmt = (
+                select(Message)
+                .where(Message.conversation_id == conversation_id)
+                .offset(skip)
+                .limit(limit)
+                .order_by(Message.sent_at.asc())
+            )
+            result = await session.execute(stmt)
+            messages = result.scalars().all()
+
+            return total, list(messages)
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to list messages: {e}") from e
+
+    @staticmethod
+    async def update(
+        session: AsyncSession, message_id: int, data: MessageUpdate
+    ) -> Optional[Message]:
+        """Update a message
+
+        Args:
+            session: Database session
+            message_id: Message ID
+            data: Update data
+
+        Returns:
+            Updated message object or None if not found
+
+        Raises:
+            SQLiteServiceError: If update fails
+        """
+        try:
+            message = await MessageService.get(session, message_id)
+            if not message:
+                return None
+
+            update_data = data.model_dump(exclude_unset=True)
+            for field, value in update_data.items():
+                setattr(message, field, value)
+
+            await session.commit()
+            await session.refresh(message)
+            return message
+        except Exception as e:
+            await session.rollback()
+            raise SQLiteServiceError(f"Failed to update message: {e}") from e
+
+    @staticmethod
+    async def delete(session: AsyncSession, message_id: int) -> bool:
+        """Delete a message
+
+        Args:
+            session: Database session
+            message_id: Message ID
+
+        Returns:
+            True if deleted, False if not found
+
+        Raises:
+            SQLiteServiceError: If deletion fails
+        """
+        try:
+            message = await MessageService.get(session, message_id)
+            if not message:
+                return False
+
+            await session.delete(message)
+            await session.commit()
+            return True
+        except Exception as e:
+            await session.rollback()
+            raise SQLiteServiceError(f"Failed to delete message: {e}") from e

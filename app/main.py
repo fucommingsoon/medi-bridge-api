@@ -18,6 +18,12 @@ async def lifespan(app: FastAPI):
     """Application lifecycle management"""
     # Execute on startup
     print(f"{settings.APP_NAME} v{settings.APP_VERSION} is starting...")
+
+    # Initialize SQLite database on startup
+    from app.models.sqlite_db import SQLiteClientWrapper
+    await SQLiteClientWrapper.health_check()
+    print("SQLite database initialized.")
+
     yield
     # Execute on shutdown
     print(f"{settings.APP_NAME} is shutting down...")
