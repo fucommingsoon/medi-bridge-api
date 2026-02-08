@@ -14,7 +14,7 @@ This document provides comprehensive information about the SQLite database schem
 
 ## Overview
 
-The Medi-Bridge SQLite database stores medical conditions, exclusion methods for differential diagnosis, treatment plans, doctor-patient conversations, and their relationships. The database is designed to support clinical decision-making while maintaining referential integrity.
+The Medi-Bridge SQLite database stores medical conditions, exclusion methods for differential diagnosis, treatment plans, doctor-patient conversations, and the SympGAN dataset (diseases, symptoms, and their associations). The database is designed to support clinical decision-making while maintaining referential integrity.
 
 ### Database Location
 
@@ -91,6 +91,23 @@ SQLITE_ECHO: bool = False  # Enable SQL query logging (for debugging)
 | created_at       |
 | updated_at       |
 +-------------------+
+
+
++-----------------------------+          +---------------------------------------+
+|      sympgan_diseases       |          | sympgan_disease_symptom_associations  |
++-----------------------------+          +---------------------------------------+
+| id (PK)                    |<--------| disease_id (FK) CASCADE              |
+| cui (UNIQUE)               |          | symptom_id (FK) CASCADE ----|---------|> sympgan_symptoms
+| name                       |          | source                               |     +------------------+
+| alias                      |          | created_at                           |     | id (PK)          |
+| definition                 |          +---------------------------------------+     | cui (UNIQUE)     |
+| external_ids               |                                                       | name             |
+| created_at                 |                                                       | alias            |
+| updated_at                 |                                                       | definition       |
++-----------------------------+                                                       | external_ids     |
+                                                                                | created_at       |
+                                                                                | updated_at       |
+                                                                                +------------------+
 ```
 
 ## Entity Relationships
@@ -117,6 +134,14 @@ A conversation contains multiple messages, representing a doctor-patient consult
 - **Purpose**: Track consultation sessions and chat history
 - **Cascade**: Deleting a conversation automatically removes all associated messages
 - **Ordering**: Messages are ordered by `sent_at` timestamp (oldest first for chat history)
+
+### SympGAN Diseases and Symptoms (Many-to-Many)
+
+A disease can have multiple associated symptoms, and a symptom can be associated with multiple diseases. This relationship is managed through the `sympgan_disease_symptom_associations` junction table.
+
+- **Purpose**: Store the SympGAN dataset of disease-symptom relationships for medical knowledge reference
+- **Cascade**: Deleting a disease or symptom automatically removes associated junction records
+- **Data Source**: SympGAN open-source dataset (~25K diseases, ~12K symptoms, ~184K associations)
 
 ## Table Definitions
 
@@ -263,6 +288,65 @@ Records individual messages within a conversation.
 - `role` field is reserved for future use when speaker identification is implemented
 - Messages are typically ordered by `sent_at` in ascending order for chat history display
 
+### sympgan_diseases
+
+Stores disease information from the SympGAN dataset.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | INTEGER | PRIMARY KEY, AUTOINCREMENT | Unique identifier |
+| cui | VARCHAR(50) | NOT NULL, UNIQUE, INDEX | Disease CUI (unique identifier from UMLS) |
+| name | VARCHAR(500) | NOT NULL | Disease name |
+| alias | TEXT | NULLABLE | Disease aliases (pipe-separated) |
+| definition | TEXT | NULLABLE | Disease definition |
+| external_ids | TEXT | NULLABLE | External IDs (pipe-separated, e.g., ICD10, SNOMED) |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Record creation timestamp |
+| updated_at | TIMESTAMP | NOT NULL, DEFAULT utcnow(), ON UPDATE utcnow() | Last update timestamp |
+
+**Indexes**: Primary key on `id`, Unique index on `cui`
+
+**Notes**:
+- CUI (Concept Unique Identifier) is from UMLS (Unified Medical Language System)
+- Contains approximately 25,000 diseases from the SympGAN dataset
+
+### sympgan_symptoms
+
+Stores symptom information from the SympGAN dataset.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | INTEGER | PRIMARY KEY, AUTOINCREMENT | Unique identifier |
+| cui | VARCHAR(50) | NOT NULL, UNIQUE, INDEX | Symptom CUI (unique identifier from UMLS) |
+| name | VARCHAR(500) | NOT NULL | Symptom name |
+| alias | TEXT | NULLABLE | Symptom aliases (pipe-separated) |
+| definition | TEXT | NULLABLE | Symptom definition |
+| external_ids | TEXT | NULLABLE | External IDs (pipe-separated) |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Record creation timestamp |
+| updated_at | TIMESTAMP | NOT NULL, DEFAULT utcnow(), ON UPDATE utcnow() | Last update timestamp |
+
+**Indexes**: Primary key on `id`, Unique index on `cui`
+
+**Notes**:
+- Contains approximately 12,000 symptoms from the SympGAN dataset
+
+### sympgan_disease_symptom_associations
+
+Junction table for many-to-many relationship between diseases and symptoms from the SympGAN dataset.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | INTEGER | PRIMARY KEY, AUTOINCREMENT | Unique identifier |
+| disease_id | INTEGER | NOT NULL, FOREIGN KEY → sympgan_diseases.id (CASCADE), INDEX | Reference to disease |
+| symptom_id | INTEGER | NOT NULL, FOREIGN KEY → sympgan_symptoms.id (CASCADE), INDEX | Reference to symptom |
+| source | VARCHAR(200) | NULLABLE | Data source (e.g., HSDN, MalaCards, OrphaNet) |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Record creation timestamp |
+
+**Indexes**: Primary key on `id`, Foreign keys with CASCADE delete, Index on `disease_id`, Index on `symptom_id`
+
+**Notes**:
+- Contains approximately 184,000 disease-symptom associations
+- Source field indicates the origin of the association (HSDN, MalaCards, OrphaNet, UMLS, etc.)
+
 ## API Endpoints
 
 All SQLite endpoints are prefixed with `/api/v1/sqlite`
@@ -328,6 +412,36 @@ All SQLite endpoints are prefixed with `/api/v1/sqlite`
 | GET | `/conversations/{id}/messages` | List all messages in a conversation (paginated, oldest first) |
 | PATCH | `/messages/{id}` | Update a message |
 | DELETE | `/messages/{id}` | Delete a message |
+
+### SympGAN Diseases
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/sympgan-diseases` | Create a new disease |
+| GET | `/sympgan-diseases/{id}` | Get disease with symptoms |
+| GET | `/sympgan-diseases` | List all diseases (paginated) |
+| GET | `/sympgan-diseases/search/{query}` | Search diseases by name |
+| PATCH | `/sympgan-diseases/{id}` | Update a disease |
+| DELETE | `/sympgan-diseases/{id}` | Delete a disease (and all associations) |
+
+### SympGAN Symptoms
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/sympgan-symptoms` | Create a new symptom |
+| GET | `/sympgan-symptoms/{id}` | Get symptom with diseases |
+| GET | `/sympgan-symptoms` | List all symptoms (paginated) |
+| GET | `/sympgan-symptoms/search/{query}` | Search symptoms by name |
+| PATCH | `/sympgan-symptoms/{id}` | Update a symptom |
+| DELETE | `/sympgan-symptoms/{id}` | Delete a symptom (and all associations) |
+
+### SympGAN Disease-Symptom Associations
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/sympgan-disease-symptom-associations` | Associate a disease with a symptom |
+| GET | `/sympgan-diseases/{id}/symptoms` | Get all symptoms for a disease |
+| GET | `/sympgan-symptoms/{id}/diseases` | Get all diseases for a symptom |
 
 ### Health Check
 
@@ -456,6 +570,30 @@ curl -X POST "http://localhost:8000/api/v1/sqlite/conditions/1/treatment-plans" 
   }'
 ```
 
+#### Search SympGAN Diseases
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/sqlite/sympgan-diseases/search/diabetes"
+```
+
+#### Get Symptoms for a Disease
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/sqlite/sympgan-diseases/1/symptoms"
+```
+
+#### Search SympGAN Symptoms
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/sqlite/sympgan-symptoms/search/fever"
+```
+
+#### Get Diseases for a Symptom
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/sqlite/sympgan-symptoms/1/diseases"
+```
+
 ### Using Python Code
 
 #### Direct Database Access
@@ -504,6 +642,12 @@ async with await SQLiteClientWrapper.get_session() as session:
   - Added conversations table
   - Added messages table
   - Added one-to-many relationship between conversations and messages
+
+- **v1.2.0** - SympGAN dataset support
+  - Added sympgan_diseases table (~25K diseases)
+  - Added sympgan_symptoms table (~12K symptoms)
+  - Added sympgan_disease_symptom_associations table (~184K associations)
+  - Added many-to-many relationship between diseases and symptoms
 
 ### Database Initialization
 

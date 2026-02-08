@@ -291,6 +291,120 @@ class Message(Base):
 
 
 # ============================================================================
+# SympGAN Dataset Models
+# ============================================================================
+
+
+class SympganDisease(Base):
+    """SympGAN disease model
+
+    Stores disease information from the SympGAN dataset.
+    """
+
+    __tablename__ = "sympgan_diseases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    cui: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    alias: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    external_ids: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        nullable=False, default=lambda: datetime.utcnow()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+        default=lambda: datetime.utcnow(),
+        onupdate=lambda: datetime.utcnow(),
+    )
+
+    # Relationships
+    symptom_associations: Mapped[list["SympganDiseaseSymptomAssociation"]] = relationship(
+        "SympganDiseaseSymptomAssociation",
+        back_populates="disease",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:
+        return f"<SympganDisease(id={self.id}, cui='{self.cui}', name='{self.name}')>"
+
+
+class SympganSymptom(Base):
+    """SympGAN symptom model
+
+    Stores symptom information from the SympGAN dataset.
+    """
+
+    __tablename__ = "sympgan_symptoms"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    cui: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    alias: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    external_ids: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        nullable=False, default=lambda: datetime.utcnow()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        nullable=False,
+        default=lambda: datetime.utcnow(),
+        onupdate=lambda: datetime.utcnow(),
+    )
+
+    # Relationships
+    disease_associations: Mapped[list["SympganDiseaseSymptomAssociation"]] = relationship(
+        "SympganDiseaseSymptomAssociation",
+        back_populates="symptom",
+        cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:
+        return f"<SympganSymptom(id={self.id}, cui='{self.cui}', name='{self.name}')>"
+
+
+class SympganDiseaseSymptomAssociation(Base):
+    """SympGAN disease-symptom association model
+
+    Many-to-many relationship between diseases and symptoms from the SympGAN dataset.
+    """
+
+    __tablename__ = "sympgan_disease_symptom_associations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    disease_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("sympgan_diseases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    symptom_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("sympgan_symptoms.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        nullable=False, default=lambda: datetime.utcnow()
+    )
+
+    # Relationships
+    disease: Mapped["SympganDisease"] = relationship(
+        "SympganDisease", back_populates="symptom_associations"
+    )
+    symptom: Mapped["SympganSymptom"] = relationship(
+        "SympganSymptom", back_populates="disease_associations"
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<SympganDiseaseSymptomAssociation(id={self.id}, "
+            f"disease_id={self.disease_id}, symptom_id={self.symptom_id})>"
+        )
+
+
+# ============================================================================
 # Client Wrapper
 # ============================================================================
 

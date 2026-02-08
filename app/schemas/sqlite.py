@@ -354,3 +354,142 @@ class MessageListResponse(BaseModel):
 
 # Update forward references
 ConversationWithMessagesResponse.model_rebuild()
+
+
+# ============================================================================
+# SympGAN Disease Schemas
+# ============================================================================
+
+
+class SympganDiseaseBase(BaseModel):
+    """Base SympGAN disease schema"""
+
+    cui: str = Field(..., max_length=50, description="Disease CUI (unique identifier)")
+    name: str = Field(..., max_length=500, description="Disease name")
+    alias: Optional[str] = Field(None, description="Disease aliases (pipe-separated)")
+    definition: Optional[str] = Field(None, description="Disease definition")
+    external_ids: Optional[str] = Field(None, description="External IDs (pipe-separated)")
+
+
+class SympganDiseaseCreate(SympganDiseaseBase):
+    """Schema for creating a SympGAN disease"""
+
+    pass
+
+
+class SympganDiseaseUpdate(BaseModel):
+    """Schema for updating a SympGAN disease"""
+
+    name: Optional[str] = Field(None, max_length=500, description="Disease name")
+    alias: Optional[str] = Field(None, description="Disease aliases (pipe-separated)")
+    definition: Optional[str] = Field(None, description="Disease definition")
+    external_ids: Optional[str] = Field(None, description="External IDs (pipe-separated)")
+
+
+class SympganDiseaseResponse(SympganDiseaseBase, TimestampMixin):
+    """Schema for SympGAN disease response"""
+
+    id: int = Field(description="Disease ID")
+
+    class Config:
+        from_attributes = True
+
+
+class SympganDiseaseListResponse(BaseModel):
+    """Schema for SympGAN disease list response"""
+
+    total: int = Field(description="Total number of diseases")
+    items: list[SympganDiseaseResponse] = Field(description="List of diseases")
+
+
+class SympganDiseaseWithSymptomsResponse(SympganDiseaseResponse):
+    """Schema for SympGAN disease response with associated symptoms"""
+
+    symptoms: list["SympganSymptomResponse"] = Field(
+        default_factory=list, description="Associated symptoms"
+    )
+
+
+# ============================================================================
+# SympGAN Symptom Schemas
+# ============================================================================
+
+
+class SympganSymptomBase(BaseModel):
+    """Base SympGAN symptom schema"""
+
+    cui: str = Field(..., max_length=50, description="Symptom CUI (unique identifier)")
+    name: str = Field(..., max_length=500, description="Symptom name")
+    alias: Optional[str] = Field(None, description="Symptom aliases (pipe-separated)")
+    definition: Optional[str] = Field(None, description="Symptom definition")
+    external_ids: Optional[str] = Field(None, description="External IDs (pipe-separated)")
+
+
+class SympganSymptomCreate(SympganSymptomBase):
+    """Schema for creating a SympGAN symptom"""
+
+    pass
+
+
+class SympganSymptomUpdate(BaseModel):
+    """Schema for updating a SympGAN symptom"""
+
+    name: Optional[str] = Field(None, max_length=500, description="Symptom name")
+    alias: Optional[str] = Field(None, description="Symptom aliases (pipe-separated)")
+    definition: Optional[str] = Field(None, description="Symptom definition")
+    external_ids: Optional[str] = Field(None, description="External IDs (pipe-separated)")
+
+
+class SympganSymptomResponse(SympganSymptomBase, TimestampMixin):
+    """Schema for SympGAN symptom response"""
+
+    id: int = Field(description="Symptom ID")
+
+    class Config:
+        from_attributes = True
+
+
+class SympganSymptomListResponse(BaseModel):
+    """Schema for SympGAN symptom list response"""
+
+    total: int = Field(description="Total number of symptoms")
+    items: list[SympganSymptomResponse] = Field(description="List of symptoms")
+
+
+class SympganSymptomWithDiseasesResponse(SympganSymptomResponse):
+    """Schema for SympGAN symptom response with associated diseases"""
+
+    diseases: list[SympganDiseaseResponse] = Field(
+        default_factory=list, description="Associated diseases"
+    )
+
+
+# ============================================================================
+# SympGAN Disease-Symptom Association Schemas
+# ============================================================================
+
+
+class SympganDiseaseSymptomAssociationCreate(BaseModel):
+    """Schema for creating a disease-symptom association"""
+
+    disease_id: int = Field(..., description="Disease ID")
+    symptom_id: int = Field(..., description="Symptom ID")
+    source: Optional[str] = Field(None, max_length=200, description="Data source")
+
+
+class SympganDiseaseSymptomAssociationResponse(BaseModel):
+    """Schema for disease-symptom association response"""
+
+    id: int = Field(description="Association ID")
+    disease_id: int = Field(description="Disease ID")
+    symptom_id: int = Field(description="Symptom ID")
+    source: Optional[str] = Field(None, description="Data source")
+    created_at: datetime = Field(description="Creation timestamp")
+
+    class Config:
+        from_attributes = True
+
+
+# Update forward references
+SympganDiseaseWithSymptomsResponse.model_rebuild()
+SympganSymptomWithDiseasesResponse.model_rebuild()

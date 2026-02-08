@@ -16,6 +16,9 @@ from app.models.sqlite_db import (
     Conversation,
     ExclusionMethod,
     Message,
+    SympganDisease,
+    SympganDiseaseSymptomAssociation,
+    SympganSymptom,
     TreatmentPlan,
 )
 from app.schemas.sqlite import (
@@ -26,6 +29,9 @@ from app.schemas.sqlite import (
     ConversationUpdate,
     ExclusionMethodUpdate,
     MessageUpdate,
+    SympganDiseaseSymptomAssociationCreate,
+    SympganDiseaseUpdate,
+    SympganSymptomUpdate,
     TreatmentPlanUpdate,
 )
 
@@ -1069,3 +1075,538 @@ class MessageService:
         except Exception as e:
             await session.rollback()
             raise SQLiteServiceError(f"Failed to delete message: {e}") from e
+
+
+# ============================================================================
+# SympGAN Disease Service
+# ============================================================================
+
+
+class SympganDiseaseService:
+    """CRUD operations for SympGAN diseases"""
+
+    @staticmethod
+    async def create(session: AsyncSession, data: dict) -> SympganDisease:
+        """Create a new SympGAN disease
+
+        Args:
+            session: Database session
+            data: Disease data dictionary
+
+        Returns:
+            Created disease object
+
+        Raises:
+            SQLiteServiceError: If creation fails
+        """
+        try:
+            disease = SympganDisease(**data)
+            session.add(disease)
+            await session.commit()
+            await session.refresh(disease)
+            return disease
+        except Exception as e:
+            await session.rollback()
+            raise SQLiteServiceError(f"Failed to create disease: {e}") from e
+
+    @staticmethod
+    async def get_by_cui(session: AsyncSession, cui: str) -> Optional[SympganDisease]:
+        """Get a disease by CUI
+
+        Args:
+            session: Database session
+            cui: Disease CUI
+
+        Returns:
+            Disease object or None if not found
+        """
+        try:
+            stmt = select(SympganDisease).where(SympganDisease.cui == cui)
+            result = await session.execute(stmt)
+            return result.scalars().first()
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to get disease: {e}") from e
+
+    @staticmethod
+    async def get(session: AsyncSession, disease_id: int) -> Optional[SympganDisease]:
+        """Get a disease by ID
+
+        Args:
+            session: Database session
+            disease_id: Disease ID
+
+        Returns:
+            Disease object or None if not found
+        """
+        try:
+            stmt = select(SympganDisease).where(SympganDisease.id == disease_id)
+            result = await session.execute(stmt)
+            return result.scalars().first()
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to get disease: {e}") from e
+
+    @staticmethod
+    async def get_with_symptoms(
+        session: AsyncSession, disease_id: int
+    ) -> Optional[SympganDisease]:
+        """Get a disease by ID with symptoms loaded
+
+        Args:
+            session: Database session
+            disease_id: Disease ID
+
+        Returns:
+            Disease object with symptoms or None if not found
+        """
+        try:
+            stmt = (
+                select(SympganDisease)
+                .where(SympganDisease.id == disease_id)
+                .options(
+                    selectinload(SympganDisease.symptom_associations).selectinload(
+                        SympganDiseaseSymptomAssociation.symptom
+                    )
+                )
+            )
+            result = await session.execute(stmt)
+            return result.scalars().first()
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to get disease with symptoms: {e}") from e
+
+    @staticmethod
+    async def list(
+        session: AsyncSession, skip: int = 0, limit: int = 100
+    ) -> tuple[int, list[SympganDisease]]:
+        """List all diseases with pagination
+
+        Args:
+            session: Database session
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+
+        Returns:
+            Tuple of (total count, list of diseases)
+        """
+        try:
+            # Get total count
+            count_stmt = select(func.count()).select_from(SympganDisease)
+            count_result = await session.execute(count_stmt)
+            total = count_result.scalar()
+
+            # Get paginated results
+            stmt = select(SympganDisease).offset(skip).limit(limit).order_by(SympganDisease.id)
+            result = await session.execute(stmt)
+            diseases = result.scalars().all()
+
+            return total, list(diseases)
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to list diseases: {e}") from e
+
+    @staticmethod
+    async def search_by_name(
+        session: AsyncSession, query: str, limit: int = 10
+    ) -> list[SympganDisease]:
+        """Search diseases by name (LIKE query)
+
+        Args:
+            session: Database session
+            query: Search query string
+            limit: Maximum results to return
+
+        Returns:
+            List of matching diseases
+        """
+        try:
+            stmt = (
+                select(SympganDisease)
+                .where(SympganDisease.name.ilike(f"%{query}%"))
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to search diseases: {e}") from e
+
+    @staticmethod
+    async def update(
+        session: AsyncSession, disease_id: int, data: SympganDiseaseUpdate
+    ) -> Optional[SympganDisease]:
+        """Update a disease
+
+        Args:
+            session: Database session
+            disease_id: Disease ID
+            data: Update data
+
+        Returns:
+            Updated disease object or None if not found
+
+        Raises:
+            SQLiteServiceError: If update fails
+        """
+        try:
+            disease = await SympganDiseaseService.get(session, disease_id)
+            if not disease:
+                return None
+
+            update_data = data.model_dump(exclude_unset=True)
+            for field, value in update_data.items():
+                setattr(disease, field, value)
+
+            await session.commit()
+            await session.refresh(disease)
+            return disease
+        except Exception as e:
+            await session.rollback()
+            raise SQLiteServiceError(f"Failed to update disease: {e}") from e
+
+    @staticmethod
+    async def delete(session: AsyncSession, disease_id: int) -> bool:
+        """Delete a disease
+
+        Args:
+            session: Database session
+            disease_id: Disease ID
+
+        Returns:
+            True if deleted, False if not found
+
+        Raises:
+            SQLiteServiceError: If deletion fails
+        """
+        try:
+            disease = await SympganDiseaseService.get(session, disease_id)
+            if not disease:
+                return False
+
+            await session.delete(disease)
+            await session.commit()
+            return True
+        except Exception as e:
+            await session.rollback()
+            raise SQLiteServiceError(f"Failed to delete disease: {e}") from e
+
+
+# ============================================================================
+# SympGAN Symptom Service
+# ============================================================================
+
+
+class SympganSymptomService:
+    """CRUD operations for SympGAN symptoms"""
+
+    @staticmethod
+    async def create(session: AsyncSession, data: dict) -> SympganSymptom:
+        """Create a new SympGAN symptom
+
+        Args:
+            session: Database session
+            data: Symptom data dictionary
+
+        Returns:
+            Created symptom object
+
+        Raises:
+            SQLiteServiceError: If creation fails
+        """
+        try:
+            symptom = SympganSymptom(**data)
+            session.add(symptom)
+            await session.commit()
+            await session.refresh(symptom)
+            return symptom
+        except Exception as e:
+            await session.rollback()
+            raise SQLiteServiceError(f"Failed to create symptom: {e}") from e
+
+    @staticmethod
+    async def get_by_cui(session: AsyncSession, cui: str) -> Optional[SympganSymptom]:
+        """Get a symptom by CUI
+
+        Args:
+            session: Database session
+            cui: Symptom CUI
+
+        Returns:
+            Symptom object or None if not found
+        """
+        try:
+            stmt = select(SympganSymptom).where(SympganSymptom.cui == cui)
+            result = await session.execute(stmt)
+            return result.scalars().first()
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to get symptom: {e}") from e
+
+    @staticmethod
+    async def get(session: AsyncSession, symptom_id: int) -> Optional[SympganSymptom]:
+        """Get a symptom by ID
+
+        Args:
+            session: Database session
+            symptom_id: Symptom ID
+
+        Returns:
+            Symptom object or None if not found
+        """
+        try:
+            stmt = select(SympganSymptom).where(SympganSymptom.id == symptom_id)
+            result = await session.execute(stmt)
+            return result.scalars().first()
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to get symptom: {e}") from e
+
+    @staticmethod
+    async def get_with_diseases(
+        session: AsyncSession, symptom_id: int
+    ) -> Optional[SympganSymptom]:
+        """Get a symptom by ID with diseases loaded
+
+        Args:
+            session: Database session
+            symptom_id: Symptom ID
+
+        Returns:
+            Symptom object with diseases or None if not found
+        """
+        try:
+            stmt = (
+                select(SympganSymptom)
+                .where(SympganSymptom.id == symptom_id)
+                .options(
+                    selectinload(SympganSymptom.disease_associations).selectinload(
+                        SympganDiseaseSymptomAssociation.disease
+                    )
+                )
+            )
+            result = await session.execute(stmt)
+            return result.scalars().first()
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to get symptom with diseases: {e}") from e
+
+    @staticmethod
+    async def list(
+        session: AsyncSession, skip: int = 0, limit: int = 100
+    ) -> tuple[int, list[SympganSymptom]]:
+        """List all symptoms with pagination
+
+        Args:
+            session: Database session
+            skip: Number of records to skip
+            limit: Maximum number of records to return
+
+        Returns:
+            Tuple of (total count, list of symptoms)
+        """
+        try:
+            # Get total count
+            count_stmt = select(func.count()).select_from(SympganSymptom)
+            count_result = await session.execute(count_stmt)
+            total = count_result.scalar()
+
+            # Get paginated results
+            stmt = select(SympganSymptom).offset(skip).limit(limit).order_by(SympganSymptom.id)
+            result = await session.execute(stmt)
+            symptoms = result.scalars().all()
+
+            return total, list(symptoms)
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to list symptoms: {e}") from e
+
+    @staticmethod
+    async def search_by_name(
+        session: AsyncSession, query: str, limit: int = 10
+    ) -> list[SympganSymptom]:
+        """Search symptoms by name (LIKE query)
+
+        Args:
+            session: Database session
+            query: Search query string
+            limit: Maximum results to return
+
+        Returns:
+            List of matching symptoms
+        """
+        try:
+            stmt = (
+                select(SympganSymptom)
+                .where(SympganSymptom.name.ilike(f"%{query}%"))
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to search symptoms: {e}") from e
+
+    @staticmethod
+    async def update(
+        session: AsyncSession, symptom_id: int, data: SympganSymptomUpdate
+    ) -> Optional[SympganSymptom]:
+        """Update a symptom
+
+        Args:
+            session: Database session
+            symptom_id: Symptom ID
+            data: Update data
+
+        Returns:
+            Updated symptom object or None if not found
+
+        Raises:
+            SQLiteServiceError: If update fails
+        """
+        try:
+            symptom = await SympganSymptomService.get(session, symptom_id)
+            if not symptom:
+                return None
+
+            update_data = data.model_dump(exclude_unset=True)
+            for field, value in update_data.items():
+                setattr(symptom, field, value)
+
+            await session.commit()
+            await session.refresh(symptom)
+            return symptom
+        except Exception as e:
+            await session.rollback()
+            raise SQLiteServiceError(f"Failed to update symptom: {e}") from e
+
+    @staticmethod
+    async def delete(session: AsyncSession, symptom_id: int) -> bool:
+        """Delete a symptom
+
+        Args:
+            session: Database session
+            symptom_id: Symptom ID
+
+        Returns:
+            True if deleted, False if not found
+
+        Raises:
+            SQLiteServiceError: If deletion fails
+        """
+        try:
+            symptom = await SympganSymptomService.get(session, symptom_id)
+            if not symptom:
+                return False
+
+            await session.delete(symptom)
+            await session.commit()
+            return True
+        except Exception as e:
+            await session.rollback()
+            raise SQLiteServiceError(f"Failed to delete symptom: {e}") from e
+
+
+# ============================================================================
+# SympGAN Disease-Symptom Association Service
+# ============================================================================
+
+
+class SympganDiseaseSymptomAssociationService:
+    """Service for managing disease-symptom associations"""
+
+    @staticmethod
+    async def create_association(
+        session: AsyncSession, data: SympganDiseaseSymptomAssociationCreate
+    ) -> SympganDiseaseSymptomAssociation:
+        """Associate a disease with a symptom
+
+        Args:
+            session: Database session
+            data: Association data
+
+        Returns:
+            Created association object
+
+        Raises:
+            SQLiteServiceError: If association creation fails
+        """
+        try:
+            # Verify disease exists
+            disease = await SympganDiseaseService.get(session, data.disease_id)
+            if not disease:
+                raise SQLiteServiceError(f"Disease with ID {data.disease_id} not found")
+
+            # Verify symptom exists
+            symptom = await SympganSymptomService.get(session, data.symptom_id)
+            if not symptom:
+                raise SQLiteServiceError(f"Symptom with ID {data.symptom_id} not found")
+
+            # Check if association already exists
+            existing = select(SympganDiseaseSymptomAssociation).where(
+                SympganDiseaseSymptomAssociation.disease_id == data.disease_id,
+                SympganDiseaseSymptomAssociation.symptom_id == data.symptom_id,
+            )
+            result = await session.execute(existing)
+            if result.scalars().first():
+                # Association already exists, return it
+                return result.scalars().first()
+
+            association = SympganDiseaseSymptomAssociation(
+                disease_id=data.disease_id,
+                symptom_id=data.symptom_id,
+                source=data.source,
+            )
+            session.add(association)
+            await session.commit()
+            await session.refresh(association)
+            return association
+        except SQLiteServiceError:
+            raise
+        except Exception as e:
+            await session.rollback()
+            raise SQLiteServiceError(f"Failed to create association: {e}") from e
+
+    @staticmethod
+    async def get_diseases_by_symptom(
+        session: AsyncSession, symptom_id: int
+    ) -> list[SympganDisease]:
+        """Get all diseases associated with a symptom
+
+        Args:
+            session: Database session
+            symptom_id: Symptom ID
+
+        Returns:
+            List of diseases
+
+        Raises:
+            SQLiteServiceError: If query fails
+        """
+        try:
+            stmt = (
+                select(SympganDisease)
+                .join(SympganDiseaseSymptomAssociation)
+                .where(SympganDiseaseSymptomAssociation.symptom_id == symptom_id)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to get diseases: {e}") from e
+
+    @staticmethod
+    async def get_symptoms_by_disease(
+        session: AsyncSession, disease_id: int
+    ) -> list[SympganSymptom]:
+        """Get all symptoms associated with a disease
+
+        Args:
+            session: Database session
+            disease_id: Disease ID
+
+        Returns:
+            List of symptoms
+
+        Raises:
+            SQLiteServiceError: If query fails
+        """
+        try:
+            stmt = (
+                select(SympganSymptom)
+                .join(SympganDiseaseSymptomAssociation)
+                .where(SympganDiseaseSymptomAssociation.disease_id == disease_id)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+        except Exception as e:
+            raise SQLiteServiceError(f"Failed to get symptoms: {e}") from e
