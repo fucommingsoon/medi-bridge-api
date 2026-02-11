@@ -1,6 +1,6 @@
 # Medi-Bridge SQLite Database Documentation
 
-This document provides comprehensive information about the SQLite database schema, relationships, and usage patterns for the Medi-Bridge API.
+This document provides comprehensive information about SQLite database schema, relationships, and usage patterns for Medi-Bridge API.
 
 ## Table of Contents
 
@@ -14,7 +14,7 @@ This document provides comprehensive information about the SQLite database schem
 
 ## Overview
 
-The Medi-Bridge SQLite database stores medical conditions, exclusion methods for differential diagnosis, treatment plans, doctor-patient conversations, and the SympGAN dataset (diseases, symptoms, and their associations). The database is designed to support clinical decision-making while maintaining referential integrity.
+The Medi-Bridge SQLite database stores diseases and symptoms from the SympGAN dataset, along with doctor-patient conversations. The database is designed to support clinical decision-making while maintaining referential integrity.
 
 ### Database Location
 
@@ -24,7 +24,7 @@ The data directory is automatically created on first run.
 
 ### Connection Configuration
 
-Configuration is managed via environment variables or the `Settings` class in `app/core/config.py`:
+Configuration is managed via environment variables or `Settings` class in `app/core/config.py`:
 
 ```python
 SQLITE_DATABASE_PATH: str = "./data/medbridge.db"  # Database file path
@@ -36,52 +36,27 @@ SQLITE_ECHO: bool = False  # Enable SQL query logging (for debugging)
 ### Entity-Relationship Diagram
 
 ```
-+-------------------+          +-------------------------------+          +--------------------+
-|    conditions     |          | condition_exclusion_methods   |          | exclusion_methods  |
-+-------------------+          +-------------------------------+          +--------------------+
-| id (PK)          |<--------| condition_id (FK)            |-------->| id (PK)           |
-| name             |          | exclusion_method_id (FK) ----|          | name              |
-| full_description |          | created_at                   |          | description       |
-| summary          |          +-------------------------------+          | procedure_steps   |
-| created_at       |                                                     | created_at        |
-| updated_at       |                                                     +--------------------+
-+-------------------+
-         |
-         |
-         v
-+-------------------------------+
-| condition_treatment_plans     |
-+-------------------------------+
-| id (PK)                       |
-| condition_id (FK) ------------|
-| treatment_plan_id (FK) -------|
-| is_primary                    |
-| priority                      |
-| notes                         |
-| created_at                    |
-+-------------------------------+
-                                      |
-                                      |
-                                      v
-                            +--------------------+
-                            | treatment_plans    |
-                            +--------------------+
-                            | id (PK)           |
-                            | name              |
-                            | description       |
-                            | medications       |
-                            | procedures        |
-                            | factors           |
-                            | contraindications |
-                            | created_at        |
-                            | updated_at        |
-                            +--------------------+
-
-
++-------------------+          +-------------------------------+
+|     diseases     |          | disease_symptom_associations |
++-------------------+          +-------------------------------+
+| id (PK)          |<--------| disease_id (FK)            |
+| cui (UNIQUE)    |          | symptom_id (FK) -------------->|
+| name             |          | source                        |  symptoms
+| alias            |          | created_at                   |  id (PK)        |
+| definition       |          +-------------------------------+  | cui (UNIQUE)   |
+| external_ids     |                                         | name            |
+| created_at       |                                         | alias           |
++-------------------+                                         | definition       |
+                                                             | external_ids     |
+                                                             | full_description|
+                                                             | summary         |
++-------------------+                                          | created_at      |
+                                                          |
+                                                          |
 +-------------------+          +-------------------------------+
 |   conversations   |          |           messages             |
 +-------------------+          +-------------------------------+
-| id (PK)          |<--------| conversation_id (FK) CASCADE   |
+| id (PK)          |<--------| conversation_id (FK) CASCADE |
 | user_id          |          | id (PK)                       |
 | title            |          | sent_at                       |
 | started_at       |          | role                          |
@@ -91,41 +66,17 @@ SQLITE_ECHO: bool = False  # Enable SQL query logging (for debugging)
 | created_at       |
 | updated_at       |
 +-------------------+
-
-
-+-----------------------------+          +---------------------------------------+
-|      sympgan_diseases       |          | sympgan_disease_symptom_associations  |
-+-----------------------------+          +---------------------------------------+
-| id (PK)                    |<--------| disease_id (FK) CASCADE              |
-| cui (UNIQUE)               |          | symptom_id (FK) CASCADE ----|---------|> sympgan_symptoms
-| name                       |          | source                               |     +------------------+
-| alias                      |          | created_at                           |     | id (PK)          |
-| definition                 |          +---------------------------------------+     | cui (UNIQUE)     |
-| external_ids               |                                                       | name             |
-| created_at                 |                                                       | alias            |
-| updated_at                 |                                                       | definition       |
-+-----------------------------+                                                       | external_ids     |
-                                                                                | created_at       |
-                                                                                | updated_at       |
-                                                                                +------------------+
 ```
 
 ## Entity Relationships
 
-### Conditions and Exclusion Methods (Many-to-Many)
+### Diseases and Symptoms (Many-to-Many)
 
-A medical condition can have multiple exclusion methods, and an exclusion method can apply to multiple conditions. This relationship is managed through the `condition_exclusion_methods` junction table.
+A disease can have multiple associated symptoms, and a symptom can be associated with multiple diseases. This relationship is managed through the `disease_symptom_associations` junction table.
 
-- **Purpose**: Store methods to exclude similar conditions during differential diagnosis
-- **Cascade**: Deleting a condition or exclusion method automatically removes associated junction records
-
-### Conditions and Treatment Plans (Many-to-One)
-
-A condition can have multiple associated treatment plans (for different scenarios, patient factors, etc.). Each association includes metadata like priority and whether it's the primary plan.
-
-- **Purpose**: Associate treatment plans with conditions while maintaining clinical context
-- **Design choice**: Each condition has its own treatment plan entries for clinical precision (data redundancy is acceptable)
-- **Cascade**: Deleting a condition or treatment plan automatically removes associated junction records
+- **Purpose**: Store SympGAN dataset of disease-symptom relationships for medical knowledge reference
+- **Cascade**: Deleting a disease or symptom automatically removes associated junction records
+- **Data Source**: SympGAN open-source dataset (~25K diseases, ~12K symptoms, ~184K associations)
 
 ### Conversations and Messages (One-to-Many)
 
@@ -135,116 +86,67 @@ A conversation contains multiple messages, representing a doctor-patient consult
 - **Cascade**: Deleting a conversation automatically removes all associated messages
 - **Ordering**: Messages are ordered by `sent_at` timestamp (oldest first for chat history)
 
-### SympGAN Diseases and Symptoms (Many-to-Many)
-
-A disease can have multiple associated symptoms, and a symptom can be associated with multiple diseases. This relationship is managed through the `sympgan_disease_symptom_associations` junction table.
-
-- **Purpose**: Store the SympGAN dataset of disease-symptom relationships for medical knowledge reference
-- **Cascade**: Deleting a disease or symptom automatically removes associated junction records
-- **Data Source**: SympGAN open-source dataset (~25K diseases, ~12K symptoms, ~184K associations)
-
 ## Table Definitions
 
-### conditions
+### diseases
 
-Stores complete medical condition information with a summary for Qdrant vector search payload.
+Stores disease information from SympGAN dataset.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | INTEGER | PRIMARY KEY, AUTOINCREMENT | Unique identifier |
-| name | VARCHAR(255) | NOT NULL | Condition name (e.g., "Acute Appendicitis") |
-| full_description | TEXT | NOT NULL | Complete condition information (long text for clinical reference) |
-| summary | TEXT | NOT NULL, MAX 1000 chars | Condition summary optimized for Qdrant vector search |
+| cui | VARCHAR(50) | NOT NULL, UNIQUE, INDEX | Disease CUI (unique identifier from UMLS) |
+| name | VARCHAR(500) | NOT NULL | Disease name |
+| alias | TEXT | NULLABLE | Disease aliases (pipe-separated) |
+| definition | TEXT | NULLABLE | Disease definition |
+| external_ids | TEXT | NULLABLE | External IDs (pipe-separated, e.g., ICD10, SNOMED) |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Record creation timestamp |
-| updated_at | TIMESTAMP | NOT NULL, DEFAULT utcnow(), ON UPDATE utcnow() | Last update timestamp |
 
-**Indexes**: Primary key on `id`
+**Indexes**: Primary key on `id`, Unique index on `cui`
 
 **Notes**:
-- The `summary` field should be concise (<1000 chars) for optimal Qdrant payload size
-- The `full_description` contains detailed clinical information
+- CUI (Concept Unique Identifier) is from UMLS (Unified Medical Language System)
+- Contains approximately 25,000 diseases from SympGAN dataset
 
-### exclusion_methods
+### symptoms
 
-Stores methods to exclude similar conditions during differential diagnosis.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| id | INTEGER | PRIMARY KEY, AUTOINCREMENT | Unique identifier |
-| name | VARCHAR(255) | NOT NULL | Method name (e.g., "CT Scan Confirmation") |
-| description | TEXT | NOT NULL | Method description |
-| procedure_steps | TEXT | NULLABLE | JSON array of procedure steps |
-| created_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Record creation timestamp |
-| updated_at | TIMESTAMP | NOT NULL, DEFAULT utcnow(), ON UPDATE utcnow() | Last update timestamp |
-
-**Indexes**: Primary key on `id`
-
-**Example `procedure_steps`**:
-```json
-["Perform abdominal palpation", "Check for rebound tenderness", "Order CT scan"]
-```
-
-### condition_exclusion_methods
-
-Junction table for many-to-many relationship between conditions and exclusion methods.
+Stores symptom information from SympGAN dataset, extended with rich content fields.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | id | INTEGER | PRIMARY KEY, AUTOINCREMENT | Unique identifier |
-| condition_id | INTEGER | NOT NULL, FOREIGN KEY → conditions.id (CASCADE) | Reference to condition |
-| exclusion_method_id | INTEGER | NOT NULL, FOREIGN KEY → exclusion_methods.id (CASCADE) | Reference to exclusion method |
+| cui | VARCHAR(50) | NOT NULL, UNIQUE, INDEX | Symptom CUI (unique identifier from UMLS) |
+| name | VARCHAR(500) | NOT NULL | Symptom name |
+| alias | TEXT | NULLABLE | Symptom aliases (pipe-separated) |
+| definition | TEXT | NULLABLE | Symptom definition |
+| external_ids | TEXT | NULLABLE | External IDs (pipe-separated) |
+| full_description | TEXT | NULLABLE | Complete symptom information (long text for clinical reference) |
+| summary | TEXT | NULLABLE | Symptom summary (optimized for vector search payload) |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Record creation timestamp |
 
-**Indexes**: Primary key on `id`, Foreign keys with CASCADE delete
-
-### treatment_plans
-
-Stores treatment plans including medications, procedures, and influencing factors.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| id | INTEGER | PRIMARY KEY, AUTOINCREMENT | Unique identifier |
-| name | VARCHAR(255) | NOT NULL | Plan name (e.g., "Standard Treatment Protocol") |
-| description | TEXT | NOT NULL | Plan description |
-| medications | TEXT | NULLABLE | JSON array of medications |
-| procedures | TEXT | NULLABLE | JSON array of procedures |
-| factors | TEXT | NULLABLE | JSON array of influencing factors (age, gender, comorbidities) |
-| contraindications | TEXT | NULLABLE | JSON array of contraindications |
-| created_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Record creation timestamp |
-| updated_at | TIMESTAMP | NOT NULL, DEFAULT utcnow(), ON UPDATE utcnow() | Last update timestamp |
-
-**Indexes**: Primary key on `id`
-
-**Example JSON fields**:
-```json
-{
-  "medications": ["Antibiotic A 500mg", "Pain reliever B"],
-  "procedures": ["Surgical intervention", "Post-op care"],
-  "factors": ["Adults 18-65", "No diabetes", "No pregnancy"],
-  "contraindications": ["Allergy to penicillin", "Severe renal impairment"]
-}
-```
-
-### condition_treatment_plans
-
-Junction table for many-to-one relationship between conditions and treatment plans.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| id | INTEGER | PRIMARY KEY, AUTOINCREMENT | Unique identifier |
-| condition_id | INTEGER | NOT NULL, FOREIGN KEY → conditions.id (CASCADE) | Reference to condition |
-| treatment_plan_id | INTEGER | NOT NULL, FOREIGN KEY → treatment_plans.id (CASCADE) | Reference to treatment plan |
-| is_primary | BOOLEAN | NOT NULL, DEFAULT FALSE | Whether this is the primary plan |
-| priority | INTEGER | NOT NULL, DEFAULT 0 | Priority ordering (higher = more important) |
-| notes | TEXT | NULLABLE | Additional notes for this association |
-| created_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Record creation timestamp |
-
-**Indexes**: Primary key on `id`, Foreign keys with CASCADE delete
+**Indexes**: Primary key on `id`, Unique index on `cui`
 
 **Notes**:
-- `is_primary`: Marks the default/first-line treatment option
-- `priority`: Used for ordering treatment options (higher values appear first)
-- Multiple treatment plans can exist for a single condition based on patient factors
+- Extended with `full_description` and `summary` fields for rich content beyond SympGAN data
+- Contains approximately 12,000 symptoms from SympGAN dataset
+
+### disease_symptom_associations
+
+Junction table for many-to-many relationship between diseases and symptoms from SympGAN dataset.
+
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | INTEGER | PRIMARY KEY, AUTOINCREMENT | Unique identifier |
+| disease_id | INTEGER | NOT NULL, FOREIGN KEY → diseases.id (CASCADE), INDEX | Reference to disease |
+| symptom_id | INTEGER | NOT NULL, FOREIGN KEY → symptoms.id (CASCADE), INDEX | Reference to symptom |
+| source | VARCHAR(200) | NULLABLE | Data source (e.g., HSDN, MalaCards, OrphaNet) |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Record creation timestamp |
+
+**Indexes**: Primary key on `id`, Foreign keys with CASCADE delete, Index on `disease_id`, Index on `symptom_id`
+
+**Notes**:
+- Contains approximately 184,000 disease-symptom associations
+- Source field indicates origin of the association (HSDN, MalaCards, OrphaNet, UMLS, etc.)
 
 ### conversations
 
@@ -288,110 +190,39 @@ Records individual messages within a conversation.
 - `role` field is reserved for future use when speaker identification is implemented
 - Messages are typically ordered by `sent_at` in ascending order for chat history display
 
-### sympgan_diseases
-
-Stores disease information from the SympGAN dataset.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| id | INTEGER | PRIMARY KEY, AUTOINCREMENT | Unique identifier |
-| cui | VARCHAR(50) | NOT NULL, UNIQUE, INDEX | Disease CUI (unique identifier from UMLS) |
-| name | VARCHAR(500) | NOT NULL | Disease name |
-| alias | TEXT | NULLABLE | Disease aliases (pipe-separated) |
-| definition | TEXT | NULLABLE | Disease definition |
-| external_ids | TEXT | NULLABLE | External IDs (pipe-separated, e.g., ICD10, SNOMED) |
-| created_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Record creation timestamp |
-| updated_at | TIMESTAMP | NOT NULL, DEFAULT utcnow(), ON UPDATE utcnow() | Last update timestamp |
-
-**Indexes**: Primary key on `id`, Unique index on `cui`
-
-**Notes**:
-- CUI (Concept Unique Identifier) is from UMLS (Unified Medical Language System)
-- Contains approximately 25,000 diseases from the SympGAN dataset
-
-### sympgan_symptoms
-
-Stores symptom information from the SympGAN dataset.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| id | INTEGER | PRIMARY KEY, AUTOINCREMENT | Unique identifier |
-| cui | VARCHAR(50) | NOT NULL, UNIQUE, INDEX | Symptom CUI (unique identifier from UMLS) |
-| name | VARCHAR(500) | NOT NULL | Symptom name |
-| alias | TEXT | NULLABLE | Symptom aliases (pipe-separated) |
-| definition | TEXT | NULLABLE | Symptom definition |
-| external_ids | TEXT | NULLABLE | External IDs (pipe-separated) |
-| created_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Record creation timestamp |
-| updated_at | TIMESTAMP | NOT NULL, DEFAULT utcnow(), ON UPDATE utcnow() | Last update timestamp |
-
-**Indexes**: Primary key on `id`, Unique index on `cui`
-
-**Notes**:
-- Contains approximately 12,000 symptoms from the SympGAN dataset
-
-### sympgan_disease_symptom_associations
-
-Junction table for many-to-many relationship between diseases and symptoms from the SympGAN dataset.
-
-| Column | Type | Constraints | Description |
-|--------|------|-------------|-------------|
-| id | INTEGER | PRIMARY KEY, AUTOINCREMENT | Unique identifier |
-| disease_id | INTEGER | NOT NULL, FOREIGN KEY → sympgan_diseases.id (CASCADE), INDEX | Reference to disease |
-| symptom_id | INTEGER | NOT NULL, FOREIGN KEY → sympgan_symptoms.id (CASCADE), INDEX | Reference to symptom |
-| source | VARCHAR(200) | NULLABLE | Data source (e.g., HSDN, MalaCards, OrphaNet) |
-| created_at | TIMESTAMP | NOT NULL, DEFAULT utcnow() | Record creation timestamp |
-
-**Indexes**: Primary key on `id`, Foreign keys with CASCADE delete, Index on `disease_id`, Index on `symptom_id`
-
-**Notes**:
-- Contains approximately 184,000 disease-symptom associations
-- Source field indicates the origin of the association (HSDN, MalaCards, OrphaNet, UMLS, etc.)
-
 ## API Endpoints
 
 All SQLite endpoints are prefixed with `/api/v1/sqlite`
 
-### Conditions
+### Diseases
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/conditions` | Create a new condition |
-| GET | `/conditions/{id}` | Get condition with relationships |
-| GET | `/conditions` | List all conditions (paginated) |
-| PATCH | `/conditions/{id}` | Update a condition |
-| DELETE | `/conditions/{id}` | Delete a condition |
+| POST | `/diseases` | Create a new disease |
+| GET | `/diseases/{id}` | Get disease with symptoms |
+| GET | `/diseases` | List all diseases (paginated) |
+| GET | `/diseases/search/{query}` | Search diseases by name |
+| PATCH | `/diseases/{id}` | Update a disease |
+| DELETE | `/diseases/{id}` | Delete a disease |
 
-### Exclusion Methods
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/exclusion-methods` | Create a new exclusion method |
-| GET | `/exclusion-methods/{id}` | Get an exclusion method |
-| GET | `/exclusion-methods` | List all exclusion methods (paginated) |
-| PATCH | `/exclusion-methods/{id}` | Update an exclusion method |
-| DELETE | `/exclusion-methods/{id}` | Delete an exclusion method |
-
-### Treatment Plans
+### Symptoms
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/treatment-plans` | Create a new treatment plan |
-| GET | `/treatment-plans/{id}` | Get a treatment plan |
-| GET | `/treatment-plans` | List all treatment plans (paginated) |
-| PATCH | `/treatment-plans/{id}` | Update a treatment plan |
-| DELETE | `/treatment-plans/{id}` | Delete a treatment plan |
+| POST | `/symptoms` | Create a new symptom |
+| GET | `/symptoms/{id}` | Get symptom with diseases |
+| GET | `/symptoms` | List all symptoms (paginated) |
+| GET | `/symptoms/search/{query}` | Search symptoms by name |
+| PATCH | `/symptoms/{id}` | Update a symptom |
+| DELETE | `/symptoms/{id}` | Delete a symptom |
 
-### Associations
+### Disease-Symptom Associations
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/conditions/{id}/exclusion-methods` | Associate exclusion method with condition |
-| DELETE | `/condition-exclusion-methods/{id}` | Remove condition-exclusion method association |
-| GET | `/conditions/{id}/exclusion-methods` | Get all exclusion methods for a condition |
-| POST | `/conditions/{id}/treatment-plans` | Associate treatment plan with condition |
-| PATCH | `/condition-treatment-plans/{id}` | Update condition-treatment plan association |
-| DELETE | `/condition-treatment-plans/{id}` | Remove condition-treatment plan association |
-| GET | `/conditions/{id}/treatment-plans` | Get all treatment plans for a condition |
+| POST | `/disease-symptom-associations` | Associate a disease with a symptom |
+| GET | `/diseases/{id}/symptoms` | Get all symptoms for a disease |
+| GET | `/symptoms/{id}/diseases` | Get all diseases for a symptom |
 
 ### Conversations
 
@@ -413,36 +244,6 @@ All SQLite endpoints are prefixed with `/api/v1/sqlite`
 | PATCH | `/messages/{id}` | Update a message |
 | DELETE | `/messages/{id}` | Delete a message |
 
-### SympGAN Diseases
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/sympgan-diseases` | Create a new disease |
-| GET | `/sympgan-diseases/{id}` | Get disease with symptoms |
-| GET | `/sympgan-diseases` | List all diseases (paginated) |
-| GET | `/sympgan-diseases/search/{query}` | Search diseases by name |
-| PATCH | `/sympgan-diseases/{id}` | Update a disease |
-| DELETE | `/sympgan-diseases/{id}` | Delete a disease (and all associations) |
-
-### SympGAN Symptoms
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/sympgan-symptoms` | Create a new symptom |
-| GET | `/sympgan-symptoms/{id}` | Get symptom with diseases |
-| GET | `/sympgan-symptoms` | List all symptoms (paginated) |
-| GET | `/sympgan-symptoms/search/{query}` | Search symptoms by name |
-| PATCH | `/sympgan-symptoms/{id}` | Update a symptom |
-| DELETE | `/sympgan-symptoms/{id}` | Delete a symptom (and all associations) |
-
-### SympGAN Disease-Symptom Associations
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/sympgan-disease-symptom-associations` | Associate a disease with a symptom |
-| GET | `/sympgan-diseases/{id}/symptoms` | Get all symptoms for a disease |
-| GET | `/sympgan-symptoms/{id}/diseases` | Get all diseases for a symptom |
-
 ### Health Check
 
 | Method | Endpoint | Description |
@@ -453,15 +254,31 @@ All SQLite endpoints are prefixed with `/api/v1/sqlite`
 
 ### Using the API
 
-#### Create a Condition
+#### Create a Disease
 
 ```bash
-curl -X POST "http://localhost:8000/api/v1/sqlite/conditions" \
+curl -X POST "http://localhost:8000/api/v1/sqlite/diseases" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Acute Appendicitis",
-    "full_description": "Acute inflammation of the vermiform appendix...",
-    "summary": "Appendix inflammation causing right lower quadrant pain"
+    "cui": "C0001234",
+    "name": "Type 2 Diabetes",
+    "alias": "T2DM|Adult-onset diabetes",
+    "definition": "A metabolic disorder characterized by high blood sugar..."
+  }'
+```
+
+#### Create a Symptom
+
+```bash
+curl -X POST "http://localhost:8000/api/v1/sqlite/symptoms" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "cui": "C0027834",
+    "name": "Chest pain",
+    "alias": "Thoracic pain|Chest discomfort",
+    "definition": "Pain or discomfort in the chest area...",
+    "full_description": "Detailed clinical description of chest pain symptoms...",
+    "summary": "Chest discomfort or pain"
   }'
 ```
 
@@ -515,83 +332,28 @@ curl -X GET "http://localhost:8000/api/v1/sqlite/conversations?skip=0&limit=10"
 curl -X GET "http://localhost:8000/api/v1/sqlite/conversations/1/messages?skip=0&limit=50"
 ```
 
-#### Get a Condition with Relationships
-
-```bash
-curl -X GET "http://localhost:8000/api/v1/sqlite/conditions/1"
-```
-
-#### Create an Exclusion Method
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/sqlite/exclusion-methods" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "CT Scan Confirmation",
-    "description": "Use CT imaging to confirm diagnosis",
-    "procedure_steps": "[\"Order CT abdomen\", \"Review radiology report\"]"
-  }'
-```
-
-#### Associate Exclusion Method with Condition
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/sqlite/conditions/1/exclusion-methods" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "exclusion_method_id": 1
-  }'
-```
-
-#### Create a Treatment Plan
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/sqlite/treatment-plans" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Standard Appendectomy Protocol",
-    "description": "Standard surgical treatment for acute appendicitis",
-    "medications": "[\"Ceftriaxone 2g IV\", \"Metronidazole 500mg IV\"]",
-    "procedures": "[\"Laparoscopic appendectomy\", \"Post-op monitoring\"]",
-    "factors": "[\"Adult patients\", \"No comorbidities\"]",
-    "contraindications": "[\"Allergy to cephalosporins\"]"
-  }'
-```
-
-#### Associate Treatment Plan with Condition
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/sqlite/conditions/1/treatment-plans" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "treatment_plan_id": 1,
-    "is_primary": true,
-    "priority": 100
-  }'
-```
-
-#### Search SympGAN Diseases
-
-```bash
-curl -X GET "http://localhost:8000/api/v1/sqlite/sympgan-diseases/search/diabetes"
-```
-
 #### Get Symptoms for a Disease
 
 ```bash
-curl -X GET "http://localhost:8000/api/v1/sqlite/sympgan-diseases/1/symptoms"
+curl -X GET "http://localhost:8000/api/v1/sqlite/diseases/1/symptoms"
 ```
 
-#### Search SympGAN Symptoms
+#### Search Diseases
 
 ```bash
-curl -X GET "http://localhost:8000/api/v1/sqlite/sympgan-symptoms/search/fever"
+curl -X GET "http://localhost:8000/api/v1/sqlite/diseases/search/diabetes"
+```
+
+#### Search Symptoms
+
+```bash
+curl -X GET "http://localhost:8000/api/v1/sqlite/symptoms/search/fever"
 ```
 
 #### Get Diseases for a Symptom
 
 ```bash
-curl -X GET "http://localhost:8000/api/v1/sqlite/sympgan-symptoms/1/diseases"
+curl -X GET "http://localhost:8000/api/v1/sqlite/symptoms/1/diseases"
 ```
 
 ### Using Python Code
@@ -600,17 +362,47 @@ curl -X GET "http://localhost:8000/api/v1/sqlite/sympgan-symptoms/1/diseases"
 
 ```python
 from app.models.sqlite_db import SQLiteClientWrapper
-from app.services.sqlite_crud import ConditionService, ConversationService, MessageService
+from app.services.sqlite_crud import (
+    DiseaseService,
+    SymptomService,
+    DiseaseSymptomAssociationService,
+    ConversationService,
+    MessageService,
+)
 
 # Get a database session
 async with await SQLiteClientWrapper.get_session() as session:
-    # Create a condition
-    condition = await ConditionService.create(session, {
-        "name": "Diabetes Type 2",
-        "full_description": "Chronic metabolic disorder...",
-        "summary": "T2DM - insulin resistance"
+    # Create a disease
+    disease = await DiseaseService.create(session, {
+        "cui": "C0001234",
+        "name": "Type 2 Diabetes",
+        "alias": "T2DM",
+        "definition": "Metabolic disorder...",
+        "external_ids": "ICD10:E11"
     })
-    print(f"Created condition: {condition.id}")
+    print(f"Created disease: {disease.id}")
+
+    # Create a symptom with extended fields
+    symptom = await SymptomService.create(session, {
+        "cui": "C0027834",
+        "name": "Chest pain",
+        "full_description": "Pain or discomfort in the chest area...",
+        "summary": "Chest discomfort"
+    })
+    print(f"Created symptom: {symptom.id}")
+
+    # Create disease-symptom association
+    from app.schemas.sqlite import DiseaseSymptomAssociationCreate
+
+    association = await DiseaseSymptomAssociationService.create_association(
+        session,
+        DiseaseSymptomAssociationCreate(
+            disease_id=disease.id,
+            symptom_id=symptom.id,
+            source="HSDN"
+        )
+    )
+    print(f"Created association: {association.id}")
 
     # Create a conversation
     conversation = await ConversationService.create(session, {
@@ -625,6 +417,14 @@ async with await SQLiteClientWrapper.get_session() as session:
         "content": "Patient reports blood sugar levels"
     })
     print(f"Created message: {message.id}")
+
+    # Get disease with symptoms
+    disease_with_symptoms = await DiseaseService.get_with_symptoms(session, disease.id)
+    print(f"Disease {disease.name} has {len(disease_with_symptoms.symptom_associations)} symptoms")
+
+    # Search diseases
+    diseases = await DiseaseService.search_by_name(session, "diabetes", limit=10)
+    print(f"Found {len(diseases)} diseases matching 'diabetes'")
 ```
 
 ## Migration Notes
@@ -632,22 +432,12 @@ async with await SQLiteClientWrapper.get_session() as session:
 ### Version History
 
 - **v1.0.0** - Initial SQLite database implementation
-  - Added conditions table
-  - Added exclusion_methods table
-  - Added condition_exclusion_methods junction table
-  - Added treatment_plans table
-  - Added condition_treatment_plans junction table
-
-- **v1.1.0** - Conversation support
+  - Added diseases table (SympGAN dataset)
+  - Added symptoms table (SympGAN dataset, extended)
+  - Added disease_symptom_associations table (SympGAN relationships)
   - Added conversations table
   - Added messages table
   - Added one-to-many relationship between conversations and messages
-
-- **v1.2.0** - SympGAN dataset support
-  - Added sympgan_diseases table (~25K diseases)
-  - Added sympgan_symptoms table (~12K symptoms)
-  - Added sympgan_disease_symptom_associations table (~184K associations)
-  - Added many-to-many relationship between diseases and symptoms
 
 ### Database Initialization
 
@@ -671,6 +461,8 @@ For production deployments, consider using Alembic for database migrations:
 ```bash
 pip install alembic
 alembic init migrations
+alembic revision --autogenerate -m "Add new field"
+alembic upgrade head
 ```
 
 ### Backup and Restore
@@ -709,7 +501,7 @@ sqlite3 ./data/medbridge.db < backup.sql
 4. **Connection Pooling**: SQLAlchemy manages connection pooling automatically
 
 For high-volume scenarios:
-- Consider adding indexes on frequently queried columns
+- Consider adding indexes on frequently queried columns (cui indexes already present)
 - Use read replicas for queries (SQLite supports this via WAL mode)
 - Implement caching layer for frequently accessed data
 
@@ -718,6 +510,7 @@ For high-volume scenarios:
 ### Database Lock Errors
 
 SQLite uses file-level locking. If you encounter lock errors:
+
 - Ensure only one application instance is writing to the database
 - Check for long-running transactions
 - Consider using WAL mode: `PRAGMA journal_mode=WAL`
@@ -725,14 +518,15 @@ SQLite uses file-level locking. If you encounter lock errors:
 ### Connection Issues
 
 If the health check fails:
-- Verify the data directory exists
+
+- Verify the `data` directory exists
 - Check file permissions on the database file
 - Ensure `SQLITE_DATABASE_PATH` is correctly configured
 
 ### Foreign Key Constraint Errors
 
 Foreign key constraints are enforced. Common issues:
+
 - Attempting to delete a record that is referenced by other records
 - Creating associations with non-existent IDs
-
-Always use the API endpoints which handle cascade deletions properly.
+- Always use API endpoints which handle cascade deletions properly

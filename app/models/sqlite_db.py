@@ -1,13 +1,12 @@
 """SQLite Database Models and Client Wrapper
 
-This module defines SQLAlchemy ORM models for the Medi-Bridge database
+This module defines SQLAlchemy ORM models for Medi-Bridge database
 and provides a client wrapper for database operations.
 """
 from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean,
     ForeignKey,
     Integer,
     String,
@@ -50,177 +49,105 @@ class Base(DeclarativeBase):
 # ============================================================================
 
 
-class Condition(Base):
-    """Medical condition model
+class Disease(Base):
+    """Disease model (SympGAN dataset)
 
-    Stores complete medical condition information with a summary
-    for Qdrant payload.
+    Stores disease information from SympGAN dataset.
     """
 
-    __tablename__ = "conditions"
+    __tablename__ = "diseases"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    full_description: Mapped[str] = mapped_column(Text, nullable=False)
-    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    cui: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    alias: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    external_ids: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         nullable=False, default=lambda: datetime.utcnow()
     )
-    updated_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=lambda: datetime.utcnow(),
-        onupdate=lambda: datetime.utcnow(),
-    )
 
     # Relationships
-    exclusion_methods: Mapped[list["ConditionExclusionMethod"]] = relationship(
-        "ConditionExclusionMethod", back_populates="condition", cascade="all, delete-orphan"
-    )
-    treatment_plans: Mapped[list["ConditionTreatmentPlan"]] = relationship(
-        "ConditionTreatmentPlan", back_populates="condition", cascade="all, delete-orphan"
+    symptom_associations: Mapped[list["DiseaseSymptomAssociation"]] = relationship(
+        "DiseaseSymptomAssociation",
+        back_populates="disease",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
-        return f"<Condition(id={self.id}, name='{self.name}')>"
+        return f"<Disease(id={self.id}, cui='{self.cui}', name='{self.name}')>"
 
 
-class ExclusionMethod(Base):
-    """Exclusion method model
+class Symptom(Base):
+    """Symptom model (SympGAN dataset)
 
-    Stores methods to exclude similar conditions during diagnosis.
+    Stores symptom information from SympGAN dataset.
+    Extended with full_description and summary for rich content.
     """
 
-    __tablename__ = "exclusion_methods"
+    __tablename__ = "symptoms"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    procedure_steps: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cui: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    alias: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    external_ids: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    full_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         nullable=False, default=lambda: datetime.utcnow()
     )
-    updated_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=lambda: datetime.utcnow(),
-        onupdate=lambda: datetime.utcnow(),
-    )
 
     # Relationships
-    conditions: Mapped[list["ConditionExclusionMethod"]] = relationship(
-        "ConditionExclusionMethod", back_populates="exclusion_method", cascade="all, delete-orphan"
+    disease_associations: Mapped[list["DiseaseSymptomAssociation"]] = relationship(
+        "DiseaseSymptomAssociation",
+        back_populates="symptom",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
-        return f"<ExclusionMethod(id={self.id}, name='{self.name}')>"
+        return f"<Symptom(id={self.id}, cui='{self.cui}', name='{self.name}')>"
 
 
-class ConditionExclusionMethod(Base):
-    """Junction table for condition-exclusion method relationships
+class DiseaseSymptomAssociation(Base):
+    """Disease-symptom association model (SympGAN dataset)
 
-    Many-to-many relationship between conditions and exclusion methods.
+    Many-to-many relationship between diseases and symptoms from SympGAN dataset.
     """
 
-    __tablename__ = "condition_exclusion_methods"
+    __tablename__ = "disease_symptom_associations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    condition_id: Mapped[int] = mapped_column(
+    disease_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("conditions.id", ondelete="CASCADE"),
+        ForeignKey("diseases.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
-    exclusion_method_id: Mapped[int] = mapped_column(
+    symptom_id: Mapped[int] = mapped_column(
         Integer,
-        ForeignKey("exclusion_methods.id", ondelete="CASCADE"),
+        ForeignKey("symptoms.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
+    source: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         nullable=False, default=lambda: datetime.utcnow()
     )
 
     # Relationships
-    condition: Mapped["Condition"] = relationship("Condition", back_populates="exclusion_methods")
-    exclusion_method: Mapped["ExclusionMethod"] = relationship(
-        "ExclusionMethod", back_populates="conditions"
+    disease: Mapped["Disease"] = relationship(
+        "Disease", back_populates="symptom_associations"
+    )
+    symptom: Mapped["Symptom"] = relationship(
+        "Symptom", back_populates="disease_associations"
     )
 
     def __repr__(self) -> str:
         return (
-            f"<ConditionExclusionMethod(id={self.id}, "
-            f"condition_id={self.condition_id}, exclusion_method_id={self.exclusion_method_id})>"
-        )
-
-
-class TreatmentPlan(Base):
-    """Treatment plan model
-
-    Stores treatment plans including medications, procedures,
-    and influencing factors.
-    """
-
-    __tablename__ = "treatment_plans"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
-    medications: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    procedures: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    factors: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    contraindications: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        nullable=False, default=lambda: datetime.utcnow()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=lambda: datetime.utcnow(),
-        onupdate=lambda: datetime.utcnow(),
-    )
-
-    # Relationships
-    conditions: Mapped[list["ConditionTreatmentPlan"]] = relationship(
-        "ConditionTreatmentPlan", back_populates="treatment_plan", cascade="all, delete-orphan"
-    )
-
-    def __repr__(self) -> str:
-        return f"<TreatmentPlan(id={self.id}, name='{self.name}')>"
-
-
-class ConditionTreatmentPlan(Base):
-    """Junction table for condition-treatment plan relationships
-
-    Many-to-one relationship (conditions -> treatment plans).
-    Each condition has its own treatment plan entries for clinical precision.
-    """
-
-    __tablename__ = "condition_treatment_plans"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    condition_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("conditions.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    treatment_plan_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("treatment_plans.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        nullable=False, default=lambda: datetime.utcnow()
-    )
-
-    # Relationships
-    condition: Mapped["Condition"] = relationship("Condition", back_populates="treatment_plans")
-    treatment_plan: Mapped["TreatmentPlan"] = relationship(
-        "TreatmentPlan", back_populates="conditions"
-    )
-
-    def __repr__(self) -> str:
-        return (
-            f"<ConditionTreatmentPlan(id={self.id}, "
-            f"condition_id={self.condition_id}, treatment_plan_id={self.treatment_plan_id})>"
+            f"<DiseaseSymptomAssociation(id={self.id}, "
+            f"disease_id={self.disease_id}, symptom_id={self.symptom_id})>"
         )
 
 
@@ -228,7 +155,7 @@ class Conversation(Base):
     """Conversation model
 
     Records conversations between doctors and patients.
-    Stores the current progress of vector search results.
+    Stores current progress of vector search results.
     """
 
     __tablename__ = "conversations"
@@ -288,120 +215,6 @@ class Message(Base):
 
     def __repr__(self) -> str:
         return f"<Message(id={self.id}, conversation_id={self.conversation_id}, role='{self.role}')>"
-
-
-# ============================================================================
-# SympGAN Dataset Models
-# ============================================================================
-
-
-class SympganDisease(Base):
-    """SympGAN disease model
-
-    Stores disease information from the SympGAN dataset.
-    """
-
-    __tablename__ = "sympgan_diseases"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    cui: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
-    name: Mapped[str] = mapped_column(String(500), nullable=False)
-    alias: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    external_ids: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        nullable=False, default=lambda: datetime.utcnow()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=lambda: datetime.utcnow(),
-        onupdate=lambda: datetime.utcnow(),
-    )
-
-    # Relationships
-    symptom_associations: Mapped[list["SympganDiseaseSymptomAssociation"]] = relationship(
-        "SympganDiseaseSymptomAssociation",
-        back_populates="disease",
-        cascade="all, delete-orphan",
-    )
-
-    def __repr__(self) -> str:
-        return f"<SympganDisease(id={self.id}, cui='{self.cui}', name='{self.name}')>"
-
-
-class SympganSymptom(Base):
-    """SympGAN symptom model
-
-    Stores symptom information from the SympGAN dataset.
-    """
-
-    __tablename__ = "sympgan_symptoms"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    cui: Mapped[str] = mapped_column(String(50), nullable=False, unique=True, index=True)
-    name: Mapped[str] = mapped_column(String(500), nullable=False)
-    alias: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    definition: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    external_ids: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        nullable=False, default=lambda: datetime.utcnow()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=lambda: datetime.utcnow(),
-        onupdate=lambda: datetime.utcnow(),
-    )
-
-    # Relationships
-    disease_associations: Mapped[list["SympganDiseaseSymptomAssociation"]] = relationship(
-        "SympganDiseaseSymptomAssociation",
-        back_populates="symptom",
-        cascade="all, delete-orphan",
-    )
-
-    def __repr__(self) -> str:
-        return f"<SympganSymptom(id={self.id}, cui='{self.cui}', name='{self.name}')>"
-
-
-class SympganDiseaseSymptomAssociation(Base):
-    """SympGAN disease-symptom association model
-
-    Many-to-many relationship between diseases and symptoms from the SympGAN dataset.
-    """
-
-    __tablename__ = "sympgan_disease_symptom_associations"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    disease_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("sympgan_diseases.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    symptom_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("sympgan_symptoms.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    source: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        nullable=False, default=lambda: datetime.utcnow()
-    )
-
-    # Relationships
-    disease: Mapped["SympganDisease"] = relationship(
-        "SympganDisease", back_populates="symptom_associations"
-    )
-    symptom: Mapped["SympganSymptom"] = relationship(
-        "SympganSymptom", back_populates="disease_associations"
-    )
-
-    def __repr__(self) -> str:
-        return (
-            f"<SympganDiseaseSymptomAssociation(id={self.id}, "
-            f"disease_id={self.disease_id}, symptom_id={self.symptom_id})>"
-        )
 
 
 # ============================================================================
@@ -489,9 +302,13 @@ class SQLiteClientWrapper:
 
     @classmethod
     async def close(cls) -> None:
-        """Close the database connection"""
+        """Close database connection"""
         if cls._engine is not None:
             await cls._engine.dispose()
             cls._initialized = False
             cls._engine = None
             cls._session_factory = None
+
+
+# Global instance
+sqlite_client = SQLiteClientWrapper

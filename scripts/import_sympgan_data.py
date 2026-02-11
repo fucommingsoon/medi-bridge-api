@@ -2,8 +2,8 @@
 """
 SympGAN Dataset Import Script
 
-This script imports the SympGAN dataset (diseases, symptoms, and associations)
-from TSV files into the SQLite database.
+This script imports SympGAN dataset (diseases, symptoms, and associations)
+from TSV files into SQLite database.
 
 Usage:
     python scripts/import_sympgan_data.py
@@ -23,8 +23,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 os.chdir(project_root)
 
-from app.models.sqlite_db import SQLiteClientWrapper
-from app.models.sqlite_db import SympganDisease, SympganSymptom, SympganDiseaseSymptomAssociation
+from app.models.sqlite_db import SQLiteClientWrapper, Disease, Symptom, DiseaseSymptomAssociation
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from tqdm import tqdm
@@ -92,19 +91,19 @@ async def import_diseases(session: AsyncSession) -> dict[str, int]:
         for row in batch:
             # Check if already exists
             existing = await session.execute(
-                select(SympganDisease).where(SympganDisease.cui == row["Disease_CUI"])
+                select(Disease).where(Disease.cui == row["Disease_CUI"])
             )
             if existing.scalars().first():
                 # Get existing ID
                 existing = await session.execute(
-                    select(SympganDisease.id).where(SympganDisease.cui == row["Disease_CUI"])
+                    select(Disease.id).where(Disease.cui == row["Disease_CUI"])
                 )
                 cui_to_id[row["Disease_CUI"]] = existing.scalar()
                 skipped += 1
                 continue
 
             # Create new disease
-            disease = SympganDisease(
+            disease = Disease(
                 cui=row["Disease_CUI"],
                 name=row["Disease_Name"],
                 alias=row["Alias"] if row["Alias"] else None,
@@ -121,7 +120,7 @@ async def import_diseases(session: AsyncSession) -> dict[str, int]:
         for row in batch:
             if row["Disease_CUI"] not in cui_to_id:
                 result = await session.execute(
-                    select(SympganDisease.id).where(SympganDisease.cui == row["Disease_CUI"])
+                    select(Disease.id).where(Disease.cui == row["Disease_CUI"])
                 )
                 cui_to_id[row["Disease_CUI"]] = result.scalar()
 
@@ -157,19 +156,19 @@ async def import_symptoms(session: AsyncSession) -> dict[str, int]:
         for row in batch:
             # Check if already exists
             existing = await session.execute(
-                select(SympganSymptom).where(SympganSymptom.cui == row["Symptom_CUI"])
+                select(Symptom).where(Symptom.cui == row["Symptom_CUI"])
             )
             if existing.scalars().first():
                 # Get existing ID
                 existing = await session.execute(
-                    select(SympganSymptom.id).where(SympganSymptom.cui == row["Symptom_CUI"])
+                    select(Symptom.id).where(Symptom.cui == row["Symptom_CUI"])
                 )
                 cui_to_id[row["Symptom_CUI"]] = existing.scalar()
                 skipped += 1
                 continue
 
             # Create new symptom
-            symptom = SympganSymptom(
+            symptom = Symptom(
                 cui=row["Symptom_CUI"],
                 name=row["Symptom_Name"],
                 alias=row["Alias"] if row["Alias"] else None,
@@ -186,7 +185,7 @@ async def import_symptoms(session: AsyncSession) -> dict[str, int]:
         for row in batch:
             if row["Symptom_CUI"] not in cui_to_id:
                 result = await session.execute(
-                    select(SympganSymptom.id).where(SympganSymptom.cui == row["Symptom_CUI"])
+                    select(Symptom.id).where(Symptom.cui == row["Symptom_CUI"])
                 )
                 cui_to_id[row["Symptom_CUI"]] = result.scalar()
 
@@ -236,9 +235,9 @@ async def import_associations(
 
             # Check if association already exists
             existing = await session.execute(
-                select(SympganDiseaseSymptomAssociation).where(
-                    SympganDiseaseSymptomAssociation.disease_id == disease_id,
-                    SympganDiseaseSymptomAssociation.symptom_id == symptom_id,
+                select(DiseaseSymptomAssociation).where(
+                    DiseaseSymptomAssociation.disease_id == disease_id,
+                    DiseaseSymptomAssociation.symptom_id == symptom_id,
                 )
             )
             if existing.scalars().first():
@@ -246,7 +245,7 @@ async def import_associations(
                 continue
 
             # Create new association
-            association = SympganDiseaseSymptomAssociation(
+            association = DiseaseSymptomAssociation(
                 disease_id=disease_id,
                 symptom_id=symptom_id,
                 source=row["Source"] if row["Source"] else None,
@@ -273,7 +272,7 @@ async def main():
     for file_path in [DISEASES_FILE, SYMPTOMS_FILE, ASSOCIATIONS_FILE]:
         if not file_path.exists():
             print(f"\nError: Data file not found: {file_path}")
-            print("Please ensure the SympGAN dataset is in ./data/sympgan/")
+            print("Please ensure SympGAN dataset is in ./data/sympgan/")
             return
 
     # Get database session
@@ -284,7 +283,7 @@ async def main():
         # Import symptoms and get CUI to ID mapping
         symptom_cui_to_id = await import_symptoms(session)
 
-        # Import associations using the mappings
+        # Import associations using mappings
         await import_associations(session, disease_cui_to_id, symptom_cui_to_id)
 
     print("\n" + "=" * 60)
@@ -296,16 +295,16 @@ async def main():
         from sqlalchemy import func
 
         # Count diseases
-        disease_count = await session.execute(select(func.count()).select_from(SympganDisease))
+        disease_count = await session.execute(select(func.count()).select_from(Disease))
         print(f"\nTotal diseases in database: {disease_count.scalar()}")
 
         # Count symptoms
-        symptom_count = await session.execute(select(func.count()).select_from(SympganSymptom))
+        symptom_count = await session.execute(select(func.count()).select_from(Symptom))
         print(f"Total symptoms in database: {symptom_count.scalar()}")
 
         # Count associations
         assoc_count = await session.execute(
-            select(func.count()).select_from(SympganDiseaseSymptomAssociation)
+            select(func.count()).select_from(DiseaseSymptomAssociation)
         )
         print(f"Total disease-symptom associations: {assoc_count.scalar()}")
 
